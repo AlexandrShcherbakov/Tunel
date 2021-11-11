@@ -7,7 +7,7 @@ var
     tunel_edge_center_vec: float3
     backgroud_color_vec: float3
     tunel_edge_color = 0x4B4BCE
-    ball_color = 0xF8F673
+    ball_color = 0x4C9649
 
     ball_pos: float3
     ball_base_pos: float3
@@ -281,13 +281,13 @@ def draw_ball(pos)
     let radius = ball_radius / z * 2.0
     graphics::fill_circle(projected_pos.x, projected_pos.y, radius, ball_color)
 
-    // let phys_radius = radius / float(get_screen_height()) * 16.0
+    // let phys_radius = 0.3//radius / float(get_screen_height()) * 16.0
     // for x in range(projected_pos.x - ball_radius, projected_pos.x + ball_radius)
     //     for y in range(projected_pos.y - ball_radius, projected_pos.y + ball_radius)
     //         if pow(float(x) - projected_pos.x, 2.0) + pow(float(y) - projected_pos.y, 2.0) > ball_radius * ball_radius
     //             continue
 
-    //         let frag_pos = float2(x, y) / float2(get_screen_width(), get_screen_height()) - float2(0.5)
+    //         let frag_pos = (float2(x, y) - projected_pos) / float2(get_screen_width(), get_screen_height())// - float2(0.5)
     //         let trace_dir = normalize(center_view + frag_pos.x * right + frag_pos.y * up)
     //         let b = -2.0 * dot(trace_dir, to_center)
     //         let c = phys_radius * phys_radius - dot(to_center, to_center)
@@ -297,7 +297,8 @@ def draw_ball(pos)
     //         let t = (-b + sqrt(D)) * 0.5
     //         let hit = camera_pos + trace_dir * t
     //         let normal = normalize(hit - pos)
-    //         graphics::set_pixel(x, y, vec_to_color(normal * 0.5 + float3(0.5)))
+    //         let light = dot(normal, normalize(float3(1, -1, 0)))
+    //         graphics::set_pixel(x, y, vec_to_color(light * color_to_vec(ball_color)))
 
 
 def draw_segment(idx)
