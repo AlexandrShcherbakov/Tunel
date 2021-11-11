@@ -130,7 +130,7 @@ def act(dt: float)
 
     slice_ball_pos += slice_ball_vel * dt
     var shadow_slice_pos = slice_ball_pos
-    shadow_slice_pos.y = -sqrt(1.0 - min(shadow_slice_pos.x, 1.0) * min(shadow_slice_pos.x, 1.0))
+    shadow_slice_pos.y = -sqrt(1.0 - min(pow(shadow_slice_pos.x, 2.0), 0.99))
     if length(slice_ball_pos) > 1.0
         slice_ball_pos = normalize(slice_ball_pos)
         slice_ball_vel = slice_ball_vel - 2.0 * dot(slice_ball_vel, -slice_ball_pos) * -slice_ball_pos
