@@ -1,0 +1,318 @@
+require daslib/media
+options debugger            // uncomment for debug in VS Code
+require daslib/debug        // uncomment for debug in VS Code
+
+var
+    tunel_edge_color_vec: float3
+    tunel_edge_center_vec: float3
+    backgroud_color_vec: float3
+    tunel_edge_color = 0x4B4BCE
+    ball_color = 0xF8F673
+
+    ball_pos: float3
+    ball_base_pos: float3
+    ball_radius: float
+    camera_pos: float3
+    center_view: float3
+    up: float3
+    right: float3
+    segments_control_points : array<float3>
+    segments_edge_points : array<array<float3>>
+    current_segment: int
+    one_segment_point_back: float3
+    force: float
+    slice_ball_pos: float2
+    slice_ball_vel: float2
+    move_speed: float
+    shadow_scale: float
+    shadow_pos: float3
+
+let
+    segment_width = 1.0
+    segments_count = 30
+    sectors_count = 15
+    tunel_edge_center = 0xE0E0E0
+    backgroud_color = 0x2B2B30
+    lowest_move_speed = 4.0
+
+def reset
+    ball_radius = 60.0
+    camera_pos = float3(0.0, 0.0, 0.0)
+    center_view = float3(0, 0, 1)
+    up = float3(0, 1, 0)
+    right = float3(1, 0, 0)
+    current_segment = 0
+    one_segment_point_back = generate_point(-1.0)
+    force = 0.0
+    slice_ball_pos = float2(0, 0)
+    slice_ball_vel = float2(0, 0)
+    move_speed = lowest_move_speed
+    shadow_scale = 0.9
+
+    segments_control_points |> resize(segments_count)
+    for i in range(segments_count)
+        segments_control_points[i] = generate_point(float(i))
+    segments_edge_points |> resize(segments_count)
+    for i in range(segments_count)
+        segments_edge_points[i] <- generate_edge_points(segments_control_points[i], segments_control_points[(i + 1) % segments_count])
+
+    ball_base_pos = segments_control_points[2]
+
+
+def color_to_vec(color)
+    return float3((color >> 16u) & 0xFF, (color >> 8u) & 0xFF, color & 0xFF) / 255.0
+
+def vec_to_color(vec)
+    return (uint(vec.x * 255.0) << 16u) | (uint(vec.y * 255.0) << 8u) | (uint(vec.z * 255.0) << 0u)
+
+def gen_point_for_angle(pos, next_pos, angle)
+    let segment_dir = normalize(next_pos - pos)
+    let segment_right = normalize(cross(segment_dir, up))
+    let segment_up = normalize(cross(segment_right, segment_dir))
+    return segment_width * (cos(angle) * segment_right + sin(angle) * segment_up) + pos
+
+def generate_edge_points(pos, next_pos)
+    var points: array<float3>
+    for i in range(sectors_count)
+        var angle = float(i) / float(sectors_count) * math::PI * 2.0
+        points |> push(gen_point_for_angle(pos, next_pos, angle))
+    return <- points
+
+def generate_point(z_offset)
+    let x = sin(z_offset) * 0.15
+    let y = cos(z_offset * 0.4) * 0.15
+    return float3(x, y, z_offset)
+
+// 'initialize' runs once when game starts and every hot-reload
+[export]
+def initialize
+    tunel_edge_color_vec = color_to_vec(tunel_edge_color)
+    tunel_edge_center_vec = color_to_vec(tunel_edge_center)
+    backgroud_color_vec = color_to_vec(backgroud_color)
+
+    reset()
+
+    set_window_title("Tunel")
+    return
+
+def easeInOutCubic(x)
+    return x < 0.5 ? 4.0 * x * x * x : 1.0 - pow(-2.0 * x + 2.0, 3.0) / 2.0;
+
+def easeInOutSine(x)
+    return -(cos(math::PI * x) - 1.0) / 2.0;
+
+
+
+// this function is called to update game data,
+// dt - time elapsed since the previous update (in seconds)
+[export]
+def act(dt: float)
+    if get_key(VK_ESCAPE)
+        schedule_quit_game()
+
+    if get_key(VK_SPACE)
+        reset()
+
+    if get_key(VK_RIGHT)
+        slice_ball_vel.x += 4.0 * dt
+    if get_key(VK_LEFT)
+        slice_ball_vel.x -= 4.0 * dt
+    if get_key(VK_UP)
+        move_speed = min(move_speed + 4.0 * dt, 8.0)
+    if get_key(VK_DOWN)
+        move_speed = max(move_speed - 4.0 * dt, lowest_move_speed)
+
+    move_speed = max(move_speed * 0.999, lowest_move_speed)
+
+    let scaled_dt = dt * move_speed
+
+    slice_ball_vel.y -= 7.0 * dt
+
+    slice_ball_pos += slice_ball_vel * dt
+    var shadow_slice_pos = slice_ball_pos
+    shadow_slice_pos.y = -sqrt(1.0 - min(shadow_slice_pos.x, 1.0) * min(shadow_slice_pos.x, 1.0))
+    if length(slice_ball_pos) > 1.0
+        slice_ball_pos = normalize(slice_ball_pos)
+        slice_ball_vel = slice_ball_vel - 2.0 * dot(slice_ball_vel, -slice_ball_pos) * -slice_ball_pos
+
+    slice_ball_vel *= 0.99
+
+
+    camera_pos += center_view * scaled_dt
+
+    let next_segment = (current_segment + 1) % segments_count
+    let next2_segment = (current_segment + 2) % segments_count
+    let next3_segment = (current_segment + 3) % segments_count
+    let prev_view = normalize(segments_control_points[current_segment % segments_count] - one_segment_point_back)
+    let current_view = normalize(segments_control_points[next_segment] - segments_control_points[current_segment % segments_count])
+    let next_view = normalize(segments_control_points[next2_segment] - segments_control_points[next_segment])
+    let next2_view = normalize(segments_control_points[next3_segment] - segments_control_points[next2_segment])
+    let t = ((camera_pos.z - segments_control_points[current_segment % segments_count].z)
+        / (segments_control_points[next_segment].z - segments_control_points[current_segment % segments_count].z))
+    let p1_view = lerp(prev_view, current_view, t)
+    let p2_view = lerp(current_view, next_view, t)
+    let p3_view = lerp(next_view, next2_view, t)
+    let blended_view = p2_view//normalize(lerp(lerp(p1_view, p2_view, t), p3_view, t))
+
+    center_view = blended_view // normalize(lerp(blended_view, float3(0, 0, 1), 0.5))
+    right = normalize(cross(center_view, float3(0, 1, 0)))
+    up = normalize(cross(right, center_view))
+
+    ball_base_pos += center_view * scaled_dt
+    ball_pos = ball_base_pos + slice_ball_pos.y * up + slice_ball_pos.x * right
+    shadow_pos = ball_base_pos + shadow_slice_pos.y * up + shadow_slice_pos.x * right
+    shadow_scale = lerp(0.9, 0.0, (slice_ball_pos.y + 1.0) * 0.5)
+
+    let new_segment = int(camera_pos.z)
+    if new_segment != current_segment
+        let rounded_idx = current_segment % segments_count
+        let rounded_prev_idx = (current_segment + segments_count - 1) % segments_count
+        one_segment_point_back = segments_control_points[rounded_idx]
+        segments_control_points[rounded_idx] = generate_point(float(current_segment + segments_count))
+        segments_edge_points[rounded_prev_idx] <- generate_edge_points(segments_control_points[rounded_prev_idx], segments_control_points[rounded_idx])
+    current_segment = new_segment
+
+    return
+
+
+def draw_line(var x1, y1, x2, y2, width)
+    let normal : float2 = normalize(float2(y1 - y2, x2 - x1))
+    let line_half_width = max(width / 2, 1)
+    let line_quart_width = max(line_half_width / 2, 1)
+    for i in range(line_half_width)
+        let x_start = float(x1) + float(i) * normal.x
+        let y_start = float(y1) + float(i) * normal.y
+        let x_finish = float(x2) + float(i) * normal.x
+        let y_finish = float(y2) + float(i) * normal.y
+        var color = float3(0, 0, 0)
+        if i < line_quart_width
+            color = lerp(tunel_edge_center_vec, tunel_edge_color_vec, float(i) / float(line_quart_width))
+        else
+            color = lerp(tunel_edge_color_vec, backgroud_color_vec, float(i - line_quart_width) / float(line_quart_width))
+        graphics::line(x_start, y_start, x_finish, y_finish, vec_to_color(color) | 0x8f000000)
+
+    for i in range(line_half_width)
+        let x_start = float(x1) - float(i) * normal.x
+        let y_start = float(y1) - float(i) * normal.y
+        let x_finish = float(x2) - float(i) * normal.x
+        let y_finish = float(y2) - float(i) * normal.y
+        var color = float3(0, 0, 0)
+        if i < line_quart_width
+            color = lerp(tunel_edge_center_vec, tunel_edge_color_vec, float(i) / float(line_quart_width))
+        else
+            color = lerp(tunel_edge_color_vec, backgroud_color_vec, float(i - line_quart_width) / float(line_quart_width))
+        graphics::line(x_start, y_start, x_finish, y_finish, vec_to_color(color) | 0x8f000000)
+
+
+def draw_edge(start, finish)
+    var to_finish = finish - camera_pos
+    var to_start = start - camera_pos
+
+    var finish_z = dot(center_view, to_finish)
+    var start_z = dot(center_view, to_start)
+    if finish_z <= 1e-5 && start_z <= 1e-5
+        return
+
+    let dir = normalize(to_finish - to_start)
+    if abs(dot(dir, center_view)) > 0.0001
+        if start_z <= 1e-5
+            let t1 = max(-dot(to_start, center_view) / dot(dir, center_view), 0.0) + 1e-3
+            to_start = to_start + t1 * dir
+            start_z = dot(center_view, to_start)
+
+        if finish_z <= 1e-5
+            let t2 = max(dot(to_finish, center_view) / dot(dir, center_view), 0.0) + 1e-3
+            to_finish = to_finish - t2 * dir
+            finish_z = dot(center_view, to_finish)
+
+    to_finish /= finish_z
+    let finish_projected_pos = float2(
+        (dot(to_finish, right) + float(get_screen_width()) / float(get_screen_height())) * 0.5 * float(get_screen_height()),
+        (-dot(to_finish, up) + 1.0) * 0.5 * float(get_screen_height()))
+
+    to_start /= start_z
+    let start_projected_pos = float2(
+        (dot(to_start, right) + float(get_screen_width()) / float(get_screen_height())) * 0.5 * float(get_screen_height()),
+        (-dot(to_start, up) + 1.0) * 0.5 * float(get_screen_height()))
+
+    var width = 8
+    if min(start_z, finish_z) > 10.0
+        width = 7
+    if min(start_z, finish_z) > 20.0
+        width = 5
+    if min(start_z, finish_z) > 30.0
+        width = 3
+    draw_line(start_projected_pos.x, start_projected_pos.y, finish_projected_pos.x, finish_projected_pos.y, width)
+
+def draw_ball_shadow(pos)
+    var to_center = pos - camera_pos
+
+    var z = dot(center_view, to_center)
+    if z <= 1e-5
+        return
+
+    to_center /= z
+    let projected_pos = float2(
+        (dot(to_center, right) + float(get_screen_width()) / float(get_screen_height())) * 0.5 * float(get_screen_height()),
+        (-dot(to_center, up) + 1.0) * 0.5 * float(get_screen_height()))
+
+    let radius = ball_radius / z * 2.0
+    if shadow_scale * radius < 1.0
+        return
+
+    graphics::enable_alpha_blend()
+    let alpha = min(uint(255.0 * max(shadow_scale, 0.0) * 0.8), 255u)
+    graphics::fill_circle(projected_pos.x, projected_pos.y + 80.0, radius * shadow_scale, 0x000A0A0Au | (alpha << 24u))
+    graphics::disable_alpha_blend()
+
+
+def draw_ball(pos)
+    var to_center = pos - camera_pos
+
+    var z = dot(center_view, to_center)
+    if z <= 1e-5
+        return
+
+    to_center /= z
+    let projected_pos = float2(
+        (dot(to_center, right) + float(get_screen_width()) / float(get_screen_height())) * 0.5 * float(get_screen_height()),
+        (-dot(to_center, up) + 1.0) * 0.5 * float(get_screen_height()))
+
+    let radius = ball_radius / z * 2.0
+    graphics::fill_circle(projected_pos.x, projected_pos.y, radius, ball_color)
+
+    // let phys_radius = radius / float(get_screen_height()) * 16.0
+    // for x in range(projected_pos.x - ball_radius, projected_pos.x + ball_radius)
+    //     for y in range(projected_pos.y - ball_radius, projected_pos.y + ball_radius)
+    //         if pow(float(x) - projected_pos.x, 2.0) + pow(float(y) - projected_pos.y, 2.0) > ball_radius * ball_radius
+    //             continue
+
+    //         let frag_pos = float2(x, y) / float2(get_screen_width(), get_screen_height()) - float2(0.5)
+    //         let trace_dir = normalize(center_view + frag_pos.x * right + frag_pos.y * up)
+    //         let b = -2.0 * dot(trace_dir, to_center)
+    //         let c = phys_radius * phys_radius - dot(to_center, to_center)
+    //         let D = b * b - 4.0 * c
+    //         if D < 0.0
+    //             continue
+    //         let t = (-b + sqrt(D)) * 0.5
+    //         let hit = camera_pos + trace_dir * t
+    //         let normal = normalize(hit - pos)
+    //         graphics::set_pixel(x, y, vec_to_color(normal * 0.5 + float3(0.5)))
+
+
+def draw_segment(idx)
+    let rel_idx = (idx + current_segment + 1) % segments_count
+    for i in range(sectors_count)
+        draw_edge(segments_edge_points[rel_idx][i], segments_edge_points[(rel_idx + segments_count - 1) % segments_count][i])
+        draw_edge(segments_edge_points[rel_idx][i], segments_edge_points[rel_idx][(i + 1) % sectors_count])
+
+// this function will be called every frame after 'act',
+// you can draw anything in this function
+[export]
+def draw
+    graphics::fill_rect(0, 0, get_screen_width(), get_screen_height(), backgroud_color)
+    for i in range(segments_count - 2)
+        draw_segment(segments_count - 3 - i)
+    draw_ball_shadow(shadow_pos)
+    draw_ball(ball_pos)
+    return
