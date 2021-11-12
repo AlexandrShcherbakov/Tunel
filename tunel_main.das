@@ -48,13 +48,16 @@ var
 
 let
     segment_width = 1.0
-    segments_count = 5 //30
+    segments_count = 30
     sectors_count = 15
     tunel_edge_center = 0xE0E0E0
     backgroud_color = 0x2B2B30
+    base_tunel_edge_color = 0x4B4BCE
+    fast_tunel_edge_color = 0x4BCE61
+    slow_tunel_edge_color = 0xC74949
     lowest_move_speed = 4.0
     crystal_scale = 0.25
-    crystals_to_win = 0
+    crystals_to_win = 10
     wall_height = 0.5
     restart_timeout = 5.0
     run_engine_timing = 1.0
@@ -64,7 +67,7 @@ let
     thanks_timing = 10.0
 
 def reset
-    ball_radius = 0.35 //60.0
+    ball_radius = 0.35
     camera_pos = float3(0.0, 0.0, 0.0)
     center_view = float3(0, 0, 1)
     up = float3(0, 1, 0)
@@ -330,7 +333,7 @@ def act(dt: float)
     return
 
 
-def draw_line(var x1, y1, x2, y2, width)
+def draw_line(var x1, y1, x2, y2, width, base_color)
     let normal : float2 = normalize(float2(y1 - y2, x2 - x1))
     let line_half_width = max(width / 2, 1)
     let line_quart_width = max(line_half_width / 2, 1)
@@ -341,9 +344,9 @@ def draw_line(var x1, y1, x2, y2, width)
         let y_finish = float(y2) + float(i) * normal.y
         var color = float3(0, 0, 0)
         if i < line_quart_width
-            color = lerp(tunel_edge_center_vec, tunel_edge_color_vec, float(i) / float(line_quart_width))
+            color = lerp(tunel_edge_center_vec, base_color, float(i) / float(line_quart_width))
         else
-            color = lerp(tunel_edge_color_vec, backgroud_color_vec, float(i - line_quart_width) / float(line_quart_width))
+            color = lerp(base_color, backgroud_color_vec, float(i - line_quart_width) / float(line_quart_width))
         graphics::line(x_start, y_start, x_finish, y_finish, vec_to_color(color) | 0x8f000000)
 
     for i in range(line_half_width)
@@ -353,13 +356,13 @@ def draw_line(var x1, y1, x2, y2, width)
         let y_finish = float(y2) - float(i) * normal.y
         var color = float3(0, 0, 0)
         if i < line_quart_width
-            color = lerp(tunel_edge_center_vec, tunel_edge_color_vec, float(i) / float(line_quart_width))
+            color = lerp(tunel_edge_center_vec, base_color, float(i) / float(line_quart_width))
         else
-            color = lerp(tunel_edge_color_vec, backgroud_color_vec, float(i - line_quart_width) / float(line_quart_width))
+            color = lerp(base_color, backgroud_color_vec, float(i - line_quart_width) / float(line_quart_width))
         graphics::line(x_start, y_start, x_finish, y_finish, vec_to_color(color) | 0x8f000000)
 
 
-def draw_edge(start, finish)
+def draw_edge(start, finish, color)
     var to_finish = finish - camera_pos
     var to_start = start - camera_pos
 
@@ -397,7 +400,7 @@ def draw_edge(start, finish)
         width = 5
     if min(start_z, finish_z) > 30.0
         width = 3
-    draw_line(start_projected_pos.x, start_projected_pos.y, finish_projected_pos.x, finish_projected_pos.y, width)
+    draw_line(start_projected_pos.x, start_projected_pos.y, finish_projected_pos.x, finish_projected_pos.y, width, color)
 
 def get_ball_z(pos)
     return dot(center_view, pos - camera_pos)
@@ -541,7 +544,7 @@ def draw_wall(segment_id, sector_idx)
     var points : array<float3>
     let seg_normal = normalize(cross(
         segments_edge_points[segment_id][(sector_idx + 1) % sectors_count] - segments_edge_points[segment_id][sector_idx],
-        + segments_edge_points[(segment_id + 1) % segments_count][sector_idx] - segments_edge_points[segment_id][sector_idx]
+        segments_edge_points[(segment_id + 1) % segments_count][sector_idx] - segments_edge_points[segment_id][sector_idx]
     ))
 
     points |> push(segments_edge_points[segment_id][sector_idx])
@@ -552,7 +555,25 @@ def draw_wall(segment_id, sector_idx)
     draw_flat_convex(points, backgroud_color)
 
     for i in range(points|>length())
-        draw_edge(points[i], points[(i + 1) % points |> length()])
+        draw_edge(points[i], points[(i + 1) % points |> length()], tunel_edge_color_vec)
+
+def draw_accel_panel(segment_id, sector_idx)
+    let x = segments_edge_points[segment_id][(sector_idx + 1) % sectors_count] - segments_edge_points[segment_id][sector_idx]
+    let y = segments_edge_points[(segment_id + 1) % segments_count][sector_idx] - segments_edge_points[segment_id][sector_idx]
+
+    for i in range(3)
+        let center = segments_edge_points[segment_id][sector_idx] + x * 0.5 + y / 5.0 * float(i + 2)
+        draw_edge(center, center - x * 0.25 - y / 5.0, color_to_vec(fast_tunel_edge_color))
+        draw_edge(center, center + x * 0.25 - y / 5.0, color_to_vec(fast_tunel_edge_color))
+
+def draw_deaccel_panel(segment_id, sector_idx)
+    let x = segments_edge_points[segment_id][(sector_idx + 1) % sectors_count] - segments_edge_points[segment_id][sector_idx]
+    let y = segments_edge_points[(segment_id + 1) % segments_count][sector_idx] - segments_edge_points[segment_id][sector_idx]
+
+    for i in range(3)
+        let center = segments_edge_points[segment_id][sector_idx] + x * 0.5 + y / 5.0 * float(i + 1)
+        draw_edge(center, center - x * 0.25 + y / 5.0, color_to_vec(slow_tunel_edge_color))
+        draw_edge(center, center + x * 0.25 + y / 5.0, color_to_vec(slow_tunel_edge_color))
 
 def draw_ui
     set_font_size(15)
@@ -569,8 +590,9 @@ def draw_post_mortem_ui
 def draw_layer(idx, no_objects, no_tunel)
     if !no_tunel
         for i in range(sectors_count)
-            draw_edge(segments_edge_points[idx][i], segments_edge_points[(idx + segments_count - 1) % segments_count][i])
-            draw_edge(segments_edge_points[idx][i], segments_edge_points[idx][(i + 1) % sectors_count])
+            draw_edge(segments_edge_points[idx][i], segments_edge_points[(idx + segments_count - 1) % segments_count][i], tunel_edge_color_vec)
+            draw_edge(segments_edge_points[idx][i], segments_edge_points[idx][(i + 1) % sectors_count], tunel_edge_color_vec)
+        draw_deaccel_panel(idx, 7)
     if no_objects
         return
     for crystal in crystals
