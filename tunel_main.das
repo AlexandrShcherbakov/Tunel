@@ -56,7 +56,7 @@ let
     restart_timeout = 5.0
     run_engine_timing = 3.0
     names_timing = 5.0
-    names_display_duration = 3.0
+    names_display_duration = 1.5
 
 def reset
     ball_radius = 0.35 //60.0
@@ -561,6 +561,16 @@ def draw_layer(idx, no_objects, no_tunel)
         if wall.x == idx
             draw_wall(wall.x, wall.y)
 
+def draw_arrow(from, to)
+    graphics::line(from.x, from.y, to.x, to.y, 0xCC0000)
+    let norm = normalize(float2(to.y - from.y, from.x - to.x))
+    let back_dir = normalize(from - to)
+    let width = 3.0
+    let side1 = normalize(norm + width * back_dir) * 7.0 + to
+    let side2 = normalize(-norm + width * back_dir) * 7.0 + to
+    graphics::line(to.x, to.y, side1.x, side1.y, 0xCC0000)
+    graphics::line(to.x, to.y, side2.x, side2.y, 0xCC0000)
+
 def draw_cut_scene
     for i in range(segments_count - 2)
         draw_layer((segments_count - 3 - i + current_segment + 1) % segments_count, i >= segments_count - 4, false)
@@ -579,7 +589,9 @@ def draw_cut_scene
     draw_ball(ball_pos)
     if show_names
         text_out(600, 250, "You", 0xCC0000)
+        draw_arrow(float2(600, 265), float2(570, 275))
         text_out(650, 150, "Your star crystals", 0xCC0000)
+        draw_arrow(float2(647, 160), float2(622, 170))
 
 // this function will be called every frame after 'act',
 // you can draw anything in this function
