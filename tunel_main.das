@@ -8,7 +8,6 @@ var
     tunel_edge_color_vec: float3
     tunel_edge_center_vec: float3
     backgroud_color_vec: float3
-    tunel_edge_color = 0x4B4BCE
     ball_color = 0x4C9649
 
     ball_pos: float3
@@ -67,6 +66,8 @@ let
     names_display_duration = 1.5
     starship_start_timing = 9.0
     thanks_timing = 10.0
+    high_speed = 8.0
+    low_speed = 3.0
 
 def reset
     ball_radius = 0.35
@@ -133,7 +134,6 @@ def generate_point(z_offset)
 // 'initialize' runs once when game starts and every hot-reload
 [export]
 def initialize
-    tunel_edge_color_vec = color_to_vec(tunel_edge_color)
     tunel_edge_center_vec = color_to_vec(tunel_edge_center)
     backgroud_color_vec = color_to_vec(backgroud_color)
 
@@ -229,10 +229,19 @@ def act(dt: float)
     // if get_key(VK_DOWN)
     //     move_speed = max(move_speed - 4.0 * dt, lowest_move_speed)
 
+    tunel_edge_color_vec = color_to_vec(base_tunel_edge_color)
     if move_speed > base_move_speed
-        move_speed = max(move_speed * 0.999, base_move_speed)
+        move_speed = max(move_speed - dt, base_move_speed)
+        tunel_edge_color_vec = lerp(
+            color_to_vec(base_tunel_edge_color),
+            color_to_vec(fast_tunel_edge_color),
+            (move_speed - base_move_speed) / (high_speed - base_move_speed))
     if move_speed < base_move_speed
-        move_speed = min(move_speed * 1.01, base_move_speed)
+        move_speed = min(move_speed + dt * 0.5, base_move_speed)
+        tunel_edge_color_vec = lerp(
+            color_to_vec(base_tunel_edge_color),
+            color_to_vec(slow_tunel_edge_color),
+            (base_move_speed - move_speed) / (base_move_speed - low_speed))
 
     let scaled_dt = dt * move_speed
 
