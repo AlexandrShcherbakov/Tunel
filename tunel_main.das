@@ -129,6 +129,16 @@ def get_crystal_center(segment_id, sector_idx)
     ))
     return cell_center + seg_normal * (crystal_scale * lerp(1.7, 1.0, sin(current_time * 5.0 + float(segment_id)) * 0.5 + 0.5))
 
+def get_wall_center(segment_id, sector_idx)
+    let seg_normal = normalize(cross(
+        segments_edge_points[segment_id][(sector_idx + 1) % sectors_count] - segments_edge_points[segment_id][sector_idx],
+        + segments_edge_points[(segment_id + 1) % segments_count][sector_idx] - segments_edge_points[segment_id][sector_idx]
+    ))
+    return (
+        (segments_edge_points[segment_id][(sector_idx + 1) % sectors_count] + segments_edge_points[segment_id][sector_idx]) * 0.5
+        + seg_normal * 0.5 * wall_height
+    )
+
 
 // this function is called to update game data,
 // dt - time elapsed since the previous update (in seconds)
@@ -203,6 +213,15 @@ def act(dt: float)
     gathered_crystals += crystals_to_remove |> length()
     for to_rem_idx in crystals_to_remove
         crystals |> erase(to_rem_idx)
+
+    var collided = false
+    for wall in walls
+        let wall_center = get_wall_center(wall.x, wall.y)
+        let radius = ball_radius + wall_height * 0.5
+        if length(wall_center - ball_pos) < radius
+            collided = true
+    if collided
+        reset()
 
     let new_segment = int(camera_pos.z)
     if new_segment != current_segment
@@ -455,10 +474,8 @@ def draw_wall(segment_id, sector_idx, far)
         segments_edge_points[segment_id][(sector_idx + 1) % sectors_count] - segments_edge_points[segment_id][sector_idx],
         + segments_edge_points[(segment_id + 1) % segments_count][sector_idx] - segments_edge_points[segment_id][sector_idx]
     ))
-    let wall_center = (
-        (segments_edge_points[segment_id][(sector_idx + 1) % sectors_count] + segments_edge_points[segment_id][sector_idx]) * 0.5
-        + seg_normal * 0.5 * wall_height
-    )
+
+    let wall_center = get_wall_center(segment_id, sector_idx)
     let wall_z = dot(wall_center - camera_pos, center_view)
     if far != wall_z > ball_z
         return
