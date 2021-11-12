@@ -136,7 +136,7 @@ def generate_edge_points(pos, next_pos)
 
 def generate_point(z_offset)
     let x = sin(z_offset) * 0.15
-    let y = cos(z_offset * 0.4) * 0.15
+    let y = cos(z_offset * 0.4) * 0.15 + sin(z_offset * 70.0) * 0.2
     return float3(x, y, z_offset)
 
 def project_point(point)
