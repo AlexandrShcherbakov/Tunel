@@ -31,6 +31,7 @@ var
     current_time: float
     seed: int4
     gathered_crystals:int
+    ball_z: float
 
 let
     segment_width = 1.0
@@ -186,6 +187,7 @@ def act(dt: float)
     ball_pos = ball_base_pos + slice_ball_pos.y * up + slice_ball_pos.x * right
     shadow_pos = ball_base_pos + shadow_slice_pos.y * up + shadow_slice_pos.x * right
     shadow_scale = lerp(0.9, 0.0, (slice_ball_pos.y + 1.0) * 0.5)
+    ball_z = get_ball_z(ball_pos)
 
     var crystals_to_remove: array<int>
     for idx, crys in range(crystals |> length()), crystals
@@ -294,10 +296,13 @@ def draw_edge(start, finish)
         width = 3
     draw_line(start_projected_pos.x, start_projected_pos.y, finish_projected_pos.x, finish_projected_pos.y, width)
 
+def get_ball_z(pos)
+    return dot(center_view, pos - camera_pos)
+
 def draw_ball_shadow(pos)
     var to_center = pos - camera_pos
 
-    var z = dot(center_view, to_center)
+    var z = get_ball_z(pos)
     if z <= 1e-5
         return
 
@@ -324,7 +329,7 @@ def draw_ball_shadow(pos)
 def draw_ball(pos)
     var to_center = pos - camera_pos
 
-    var z = dot(center_view, to_center)
+    var z = get_ball_z(pos)
     if z <= 1e-5
         return
 
@@ -367,7 +372,7 @@ def draw_segment(idx)
         draw_edge(segments_edge_points[rel_idx][i], segments_edge_points[(rel_idx + segments_count - 1) % segments_count][i])
         draw_edge(segments_edge_points[rel_idx][i], segments_edge_points[rel_idx][(i + 1) % sectors_count])
 
-def draw_crystal(segment_id, sector_idx)
+def draw_crystal(segment_id, sector_idx, far)
     var points : array<float3>
     let segments = 6
     let cell_center = (
@@ -381,6 +386,10 @@ def draw_crystal(segment_id, sector_idx)
         + segments_edge_points[(segment_id + 1) % segments_count][sector_idx] - segments_edge_points[segment_id][sector_idx]
     ))
     let crystal_center = get_crystal_center(segment_id, sector_idx)
+    let crystal_z = dot(crystal_center - camera_pos, center_view)
+    if far != crystal_z > ball_z
+        return
+
     for i in range(segments)
         let angle = float(i) / float(segments) * math::PI * 2.0
         let x = (cos(angle) * crystal_scale)
@@ -433,7 +442,9 @@ def draw
         draw_segment(segments_count - 3 - i)
     draw_ball_shadow(shadow_pos)
     for crystal in crystals
-        draw_crystal(crystal.x, crystal.y)
+        draw_crystal(crystal.x, crystal.y, true)
     draw_ball(ball_pos)
+    for crystal in crystals
+        draw_crystal(crystal.x, crystal.y, false)
     draw_ui()
     return
