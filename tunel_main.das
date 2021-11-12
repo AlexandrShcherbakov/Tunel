@@ -46,6 +46,7 @@ var
     show_thanks: bool
     fast_panels: array<int2>
     slow_panels: array<int2>
+    far_fog: Image
 
 let
     segment_width = 1.0
@@ -56,6 +57,7 @@ let
     base_tunel_edge_color = 0x4B4BCE
     fast_tunel_edge_color = 0x4BCE61
     slow_tunel_edge_color = 0xC74949
+    fog_color = 0x6A0080
     base_move_speed = 4.0
     crystal_scale = 0.25
     crystals_to_win = 10
@@ -137,6 +139,15 @@ def initialize
     set_antialiasing(4)
     tunel_edge_center_vec = color_to_vec(tunel_edge_center)
     backgroud_color_vec = color_to_vec(backgroud_color)
+
+    far_fog <- create_image(100, 100)
+    far_fog |> set_image_smooth(true)
+    for iy in range(100)
+        for ix in range(100)
+            let x = float(ix - 50) / 50.0
+            let y = float(iy - 50) / 50.0
+            let alpha = uint(lerp(0.0, 255.0, pow(1.0 - clamp(length(float2(x, y)), 0.0, 1.0), 0.75))) << 24u
+            far_fog |> set_pixel(ix, iy, fog_color | alpha)
 
     reset()
 
@@ -709,6 +720,19 @@ def draw_cut_scene
         let text_size = get_text_size(text)
         text_out(get_screen_width() / 2 - int(text_size.x) / 2, get_screen_height() / 2 - int(text_size.y) / 2 - 100, text, 0xFFFFFF)
 
+def draw_fog
+    let center = segments_control_points[(segments_count - 3 - start_segment + current_segment + 1) % segments_count]
+    var to_point = center - camera_pos
+    var z = dot(center_view, to_point)
+
+    to_point /= z
+    let projected_pos = float2(
+        (dot(to_point, right) + float(get_screen_width()) / float(get_screen_height())) * 0.5 * float(get_screen_height()),
+        (-dot(to_point, up) + 1.0) * 0.5 * float(get_screen_height()))
+    graphics::enable_alpha_blend()
+    draw_image(far_fog, int(projected_pos.x) - 50, int(projected_pos.y) - 50)
+    graphics::disable_alpha_blend()
+
 // this function will be called every frame after 'act',
 // you can draw anything in this function
 [export]
@@ -718,6 +742,7 @@ def draw
         return
 
     graphics::fill_rect(0, 0, get_screen_width(), get_screen_height(), backgroud_color)
+    draw_fog()
     for i in range(start_segment, segments_count - 2)
         draw_layer((segments_count - 3 - i + current_segment + 1) % segments_count, i >= segments_count - 4, false)
     draw_ball_shadow(shadow_pos)
