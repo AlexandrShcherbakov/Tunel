@@ -41,19 +41,22 @@ var
     ball_vector: float3
     run_engine: bool
     cut_scene_time:float
+    show_names: bool
 
 let
     segment_width = 1.0
-    segments_count = 30
+    segments_count = 5 //30
     sectors_count = 15
     tunel_edge_center = 0xE0E0E0
     backgroud_color = 0x2B2B30
     lowest_move_speed = 4.0
     crystal_scale = 0.25
-    crystals_to_win = 6
+    crystals_to_win = 0
     wall_height = 0.5
     restart_timeout = 5.0
     run_engine_timing = 3.0
+    names_timing = 5.0
+    names_display_duration = 3.0
 
 def reset
     ball_radius = 0.35 //60.0
@@ -188,6 +191,7 @@ def act(dt: float)
             ball_pos += dt * ball_vector
         if cut_scene_time > run_engine_timing
             run_engine = true
+        show_names = cut_scene_time > names_timing && cut_scene_time < names_timing + names_display_duration
         return
 
     if get_key(VK_RIGHT)
@@ -564,7 +568,8 @@ def draw_cut_scene
         let actors = clamp(gathered_crystals, 4, 16)
         for i in range(actors)
             let angle = float(i) / float(actors) * math::PI * 2.0
-            let t = cut_scene_time - run_engine_timing + math::PI
+            let timing = show_names ? names_timing : (cut_scene_time > names_timing ? cut_scene_time - names_display_duration : cut_scene_time)
+            let t = timing - run_engine_timing + math::PI
             let scale = 5.0
             let x = scale * (cos(t) - pow(sin(t), 2.0) / sqrt(2.0) + 1.0)
             let y = scale * cos(t) * sin(t)
@@ -572,6 +577,9 @@ def draw_cut_scene
             let rot_y = sin(angle) * x + cos(angle) * y
             draw_crystal(ball_pos + right * rot_x + up * rot_y + normalize(ball_pos - camera_pos) * 3.0, right, up)
     draw_ball(ball_pos)
+    if show_names
+        text_out(600, 250, "You", 0xCC0000)
+        text_out(650, 150, "Your star crystals", 0xCC0000)
 
 // this function will be called every frame after 'act',
 // you can draw anything in this function
