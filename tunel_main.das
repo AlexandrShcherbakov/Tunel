@@ -60,7 +60,7 @@ let
     fog_color = 0x6A0080
     base_move_speed = 4.0
     crystal_scale = 0.25
-    crystals_to_win = 10
+    crystals_to_win = 1000
     wall_height = 0.5
     restart_timeout = 5.0
     run_engine_timing = 1.0
@@ -132,6 +132,26 @@ def generate_point(z_offset)
     let x = sin(z_offset) * 0.15
     let y = cos(z_offset * 0.4) * 0.15
     return float3(x, y, z_offset)
+
+def project_point(point)
+    let shifted = point - camera_pos
+    return project_shifted(shifted)
+
+def project_shifted(point)
+    let in_camera_space = float3(
+        dot(point, right),
+        dot(point, up),
+        dot(point, center_view)
+    )
+
+    let in_clip_space = in_camera_space / in_camera_space.z
+    let aspect_ratio = float(get_screen_width()) / float(get_screen_height())
+    return (in_clip_space.xy * float2(1, -1) + float2(aspect_ratio, 1.0)) * 0.5 * float(get_screen_height())
+
+def unproj_dir(position)
+    let aspect_ratio = float(get_screen_width()) / float(get_screen_height())
+    let in_clip_space = (position / float(get_screen_height()) * 2.0 - float2(aspect_ratio, 1.0)) * float2(-1, -1)
+    return normalize(float3(in_clip_space, 1.0))
 
 // 'initialize' runs once when game starts and every hot-reload
 [export]
@@ -348,11 +368,11 @@ def act(dt: float)
                     (rounded_prev_idx + segments_count - 1) % segments_count,
                     random::random_int(seed) % ((sectors_count - 1) / 2) + sectors_count / 2
                 ))
-            if rand_value == 4
-                walls |> push(int2(
-                    (rounded_prev_idx + segments_count - 1) % segments_count,
-                    random::random_int(seed) % sectors_count
-                ))
+            // if rand_value == 4
+            //     walls |> push(int2(
+            //         (rounded_prev_idx + segments_count - 1) % segments_count,
+            //         random::random_int(seed) % sectors_count
+            //     ))
             if rand_value / 3 == 2
                 fast_panels |> push(int2(
                     (rounded_prev_idx + segments_count - 1) % segments_count,
@@ -447,15 +467,8 @@ def draw_edge(start, finish, color)
             to_finish = to_finish - t2 * dir
             finish_z = dot(center_view, to_finish)
 
-    to_finish /= finish_z
-    let finish_projected_pos = float2(
-        (dot(to_finish, right) + float(get_screen_width()) / float(get_screen_height())) * 0.5 * float(get_screen_height()),
-        (-dot(to_finish, up) + 1.0) * 0.5 * float(get_screen_height()))
-
-    to_start /= start_z
-    let start_projected_pos = float2(
-        (dot(to_start, right) + float(get_screen_width()) / float(get_screen_height())) * 0.5 * float(get_screen_height()),
-        (-dot(to_start, up) + 1.0) * 0.5 * float(get_screen_height()))
+    let finish_projected_pos = project_shifted(to_finish)
+    let start_projected_pos = project_shifted(to_start)
 
     var width = 8
     if min(start_z, finish_z) > 10.0
@@ -479,12 +492,9 @@ def draw_ball_shadow(pos)
     var top = to_center - center_view * ball_radius * 0.5 + up * sqrt(3.0) * 0.5 * ball_radius
     var top_z = dot(center_view, top)
     top /= top_z
-    let projected_top = (-dot(top, up) + 1.0) * 0.5 * float(get_screen_height())
+    let projected_top = project_point(pos + up * ball_radius * 1.1).y
 
-    to_center /= z
-    let projected_pos = float2(
-        (dot(to_center, right) + float(get_screen_width()) / float(get_screen_height())) * 0.5 * float(get_screen_height()),
-        (-dot(to_center, up) + 1.0) * 0.5 * float(get_screen_height()))
+    let projected_pos = project_point(pos)
 
     let radius = projected_pos.y - projected_top
     if shadow_scale * radius < 1.0
@@ -503,37 +513,36 @@ def draw_ball(pos)
     if z <= 1e-5
         return
 
-    var top = to_center - center_view * ball_radius * 0.5 + up * sqrt(3.0) * 0.5 * ball_radius
+    var top = to_center +  up * ball_radius * 1.5 //- center_view * ball_radius * 0.5 + up * sqrt(3.0) * 0.5 * ball_radius
     var top_z = dot(center_view, top)
     top /= top_z
-    let projected_top = (-dot(top, up) + 1.0) * 0.5 * float(get_screen_height())
+    let projected_top = project_point(pos + up * ball_radius * 1.1).y
 
     to_center /= z
-    let projected_pos = float2(
-        (dot(to_center, right) + float(get_screen_width()) / float(get_screen_height())) * 0.5 * float(get_screen_height()),
-        (-dot(to_center, up) + 1.0) * 0.5 * float(get_screen_height()))
+    let projected_pos = project_point(pos)
 
     let radius = projected_pos.y - projected_top
     graphics::fill_circle(projected_pos.x, projected_pos.y, radius, ball_color)
 
-    // to_center = pos - camera_pos
-    // let trace_radius = radius * 1.5
+    to_center = pos - camera_pos
+    let trace_radius = radius * 1.5
     // for x in range(projected_pos.x - trace_radius, projected_pos.x + trace_radius)
     //     for y in range(projected_pos.y - trace_radius, projected_pos.y + trace_radius)
     //         // if pow(float(x) - projected_pos.x, 2.0) + pow(float(y) - projected_pos.y, 2.0) > trace_radius * trace_radius
     //         //     continue
 
     //         let frag_pos = (
-    //             float2(x, y) / float2(get_screen_height(), get_screen_height()) * 2.0
+    //             float2(x, y) / float(get_screen_height()) * 2.0
     //             - float2(float(get_screen_width()) / float(get_screen_height()), 1.0)
     //         ) * float2(1, -1)
-    //         let trace_dir = normalize(center_view * sqrt(1.0 - dot(frag_pos, frag_pos)) + frag_pos.x * right + frag_pos.y * up)
+    //         var trace_dir = normalize(center_view * sqrt(1.0 - dot(frag_pos, frag_pos)) + frag_pos.x * right + frag_pos.y * up)
+    //         trace_dir = normalize(unproj_dir(float2(x, y)))
     //         let b = -2.0 * dot(trace_dir, to_center)
     //         let c = dot(to_center, to_center) - ball_radius * ball_radius
     //         let D = b * b - 4.0 * c
     //         if D < 0.0
     //             continue
-    //         let t = (-b + sqrt(D)) * 0.5
+    //         let t = (-b - sqrt(D)) * 0.5
     //         let hit = camera_pos + trace_dir * t
     //         let normal = normalize(hit - pos)
     //         let light = dot(normal, normalize(float3(1, -1, 0)))
@@ -573,13 +582,7 @@ def draw_flat_convex(points, color)
             z_corrected_points |> push(points[i] + t * dir)
 
     var z_corrected_to_points <- [{ for point in z_corrected_points; point - camera_pos }]
-    let corrected_z <- [{ for vec in z_corrected_to_points; dot(vec, center_view) }]
-    z_corrected_to_points <- [{ for point, z in z_corrected_to_points, corrected_z; point / z }]
-    let projected_pos <- [{for to_center in z_corrected_to_points; float2(
-        (dot(to_center, right) + float(get_screen_width()) / float(get_screen_height())) * 0.5 * float(get_screen_height()),
-        (-dot(to_center, up) + 1.0) * 0.5 * float(get_screen_height())
-    )}]
-
+    let projected_pos <- [{for point in z_corrected_points; project_point(point)}]
     graphics::fill_convex_polygon(projected_pos, color)
 
 def draw_in_game_crystal(segment_id, sector_idx)
