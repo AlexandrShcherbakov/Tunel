@@ -47,6 +47,8 @@ var
     fast_panels: array<int2>
     slow_panels: array<int2>
     far_fog: Image
+    stub_texture: Image
+    paused: bool
 
 let
     segment_width = 1.0
@@ -98,6 +100,7 @@ def reset
     show_thanks = false
     fast_panels |> clear()
     slow_panels |> clear()
+    paused = false
 
     segments_control_points |> resize(segments_count)
     for i in range(segments_count)
@@ -169,6 +172,9 @@ def initialize
             let alpha = uint(lerp(0.0, 255.0, pow(1.0 - clamp(length(float2(x, y)), 0.0, 1.0), 0.75))) << 24u
             far_fog |> set_pixel(ix, iy, fog_color | alpha)
 
+    stub_texture <- create_image(1, 1)
+    stub_texture |> set_pixel(0, 0, 0xFFFFFFFF)
+
     reset()
 
     set_window_title("Tunel")
@@ -218,6 +224,10 @@ def set_up_cut_scene
 // dt - time elapsed since the previous update (in seconds)
 [export]
 def act(dt: float)
+    if paused
+        return
+    // paused = true
+
     if get_key(VK_ESCAPE)
         schedule_quit_game()
 
@@ -368,11 +378,11 @@ def act(dt: float)
                     (rounded_prev_idx + segments_count - 1) % segments_count,
                     random::random_int(seed) % ((sectors_count - 1) / 2) + sectors_count / 2
                 ))
-            // if rand_value == 4
-            //     walls |> push(int2(
-            //         (rounded_prev_idx + segments_count - 1) % segments_count,
-            //         random::random_int(seed) % sectors_count
-            //     ))
+            if rand_value == 4
+                walls |> push(int2(
+                    (rounded_prev_idx + segments_count - 1) % segments_count,
+                    random::random_int(seed) % sectors_count
+                ))
             if rand_value / 3 == 2
                 fast_panels |> push(int2(
                     (rounded_prev_idx + segments_count - 1) % segments_count,
@@ -555,13 +565,14 @@ def draw_segment(idx)
         draw_edge(segments_edge_points[rel_idx][i], segments_edge_points[(rel_idx + segments_count - 1) % segments_count][i])
         draw_edge(segments_edge_points[rel_idx][i], segments_edge_points[rel_idx][(i + 1) % sectors_count])
 
-def draw_flat_convex(points, color)
+def draw_flat_convex(points, color, colors)
     let to_point <- [{ for point in points; point - camera_pos }]
     let z_values <- [{ for vec in to_point; dot(vec, center_view) }]
     if all([{ for z in z_values; z < 1e-5 }])
         return
 
     var z_corrected_points: array<float3>
+    var z_corrected_colors: array<uint>
 
     let segments = points |> length()
     for i in range(segments)
@@ -569,21 +580,40 @@ def draw_flat_convex(points, color)
         let next_idx = (i + 1) % segments
         if z_values[i] > 1e-5
             z_corrected_points |> push(points[i])
+            z_corrected_colors |> push(colors[i])
             continue
 
         if z_values[prev_idx] > 1e-5
             let dir = normalize(points[prev_idx] - points[i])
             let t = max(-dot(to_point[i], center_view) / dot(dir, center_view), 0.0) + 1e-3
             z_corrected_points |> push(points[i] + t * dir)
+            z_corrected_colors |> push(colors[i])
 
         if z_values[next_idx] > 1e-5
             let dir = normalize(points[next_idx] - points[i])
             let t = max(-dot(to_point[i], center_view) / dot(dir, center_view), 0.0) + 1e-3
             z_corrected_points |> push(points[i] + t * dir)
+            z_corrected_colors |> push(colors[i])
 
-    var z_corrected_to_points <- [{ for point in z_corrected_points; point - camera_pos }]
-    let projected_pos <- [{for point in z_corrected_points; project_point(point)}]
-    graphics::fill_convex_polygon(projected_pos, color)
+    var center = float3(0, 0, 0)
+    var center_color = float3(0, 0, 0)
+    for point, col in z_corrected_points, z_corrected_colors
+        center += point
+        center_color += color_to_vec(col)
+    center_color /= float(length(z_corrected_points))
+    center /= float(length(z_corrected_points))
+    for i in range(length(z_corrected_points))
+        let tri_colors <- [{ uint[3] z_corrected_colors[i];
+            z_corrected_colors[(i + 1) % length(z_corrected_colors)];
+            vec_to_color(center_color) }]
+        let projected_pos <- [{ float2[3] project_point(z_corrected_points[i]);
+            project_point(z_corrected_points[(i + 1) % length(z_corrected_points)]);
+            project_point(center) }]
+        stub_texture |> graphics::draw_triangle_strip(projected_pos, projected_pos, tri_colors)
+
+    // let projected_pos <- [{for point in z_corrected_points; project_point(point)}]
+    // graphics::fill_convex_polygon(projected_pos, color)
+    // stub_texture |> graphics::draw_triangle_strip(projected_pos, projected_pos, color)
 
 def draw_in_game_crystal(segment_id, sector_idx)
     let cell_center = (
@@ -598,19 +628,33 @@ def draw_in_game_crystal(segment_id, sector_idx)
     ))
     let crystal_center = get_crystal_center(segment_id, sector_idx)
 
-    draw_crystal(crystal_center, float3(1, 0, 0), float3(0, 1, 0))
+    draw_crystal(crystal_center, float3(1, 0, 0), float3(0, 1, 0), (segment_id + segments_count - 1) % segments_count)
 
-def draw_crystal(crystal_center, right, up)
+def draw_crystal(crystal_center, right, up, segment_id)
     var points : array<float3>
 
+    let normal = -cross(right, up)
+    let crystal_color = float3(0.9)//float3(0.780392f,0.286275f,0.286275f)
+    var lighting: array<uint>
     let segments = 6
     for i in range(segments)
         let angle = float(i) / float(segments) * math::PI * 2.0
         let x = (cos(angle) * crystal_scale)
         let y = (sin(angle) * crystal_scale)
-        points |> push(x * right + y * up + crystal_center)
+        let position = x * right + y * up + crystal_center
+        points |> push(position)
+        let point_normal = normalize(normal + normalize(x * right + y * up))
 
-    draw_flat_convex(points, 0xC77509)
+        var point_lighting = float3(0.3)
+        if segment_id >= 0
+            for i in range(sectors_count)
+                point_lighting += pow(max(0.0, dot(point_normal, normalize(segments_edge_points[segment_id][i] - position))), 2.0) * tunel_edge_color_vec * 0.3
+        else
+            point_lighting += -point_normal * 0.5 + float3(0.5)
+        point_lighting *= crystal_color
+        lighting |> push(make_color(pow(point_lighting, float3(2.2))))
+
+    draw_flat_convex(points, 0xFFFFFFFF, lighting)
 
 def draw_wall(segment_id, sector_idx)
     var points : array<float3>
@@ -624,7 +668,13 @@ def draw_wall(segment_id, sector_idx)
     points |> push(segments_edge_points[segment_id][(sector_idx + 1) % sectors_count] + seg_normal * wall_height)
     points |> push(segments_edge_points[segment_id][sector_idx] + seg_normal * wall_height)
 
-    draw_flat_convex(points, backgroud_color)
+    var color: array<uint>
+    color |> push(backgroud_color)
+    color |> push(backgroud_color)
+    color |> push(backgroud_color)
+    color |> push(backgroud_color)
+
+    draw_flat_convex(points, backgroud_color, color)
 
     for i in range(points|>length())
         draw_edge(points[i], points[(i + 1) % points |> length()], tunel_edge_color_vec)
@@ -709,7 +759,7 @@ def draw_cut_scene
             let y = scale * cos(t) * sin(t)
             let rot_x = cos(angle) * x - sin(angle) * y
             let rot_y = sin(angle) * x + cos(angle) * y
-            draw_crystal(ball_pos + right * rot_x + up * rot_y + normalize(ball_pos - camera_pos) * 3.0, right, up)
+            draw_crystal(ball_pos + right * rot_x + up * rot_y + normalize(ball_pos - camera_pos) * 3.0, right, up, -1)
     draw_ball(ball_pos)
     if show_names
         text_out(600, 250, "You", 0xCC0000)
