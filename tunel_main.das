@@ -42,6 +42,9 @@ var
     run_engine: bool
     cut_scene_time:float
     show_names: bool
+    start_ship: bool
+    ship_velocity: float
+    show_thanks: bool
 
 let
     segment_width = 1.0
@@ -54,9 +57,11 @@ let
     crystals_to_win = 0
     wall_height = 0.5
     restart_timeout = 5.0
-    run_engine_timing = 3.0
-    names_timing = 5.0
+    run_engine_timing = 1.0
+    names_timing = 3.0
     names_display_duration = 1.5
+    starship_start_timing = 9.0
+    thanks_timing = 10.0
 
 def reset
     ball_radius = 0.35 //60.0
@@ -80,6 +85,9 @@ def reset
     cut_scene = false
     run_engine = false
     cut_scene_time = 0.0
+    start_ship = false
+    ship_velocity = 0.0
+    show_thanks = false
 
     segments_control_points |> resize(segments_count)
     for i in range(segments_count)
@@ -188,10 +196,21 @@ def act(dt: float)
     if cut_scene
         cut_scene_time += dt
         if !run_engine
-            ball_pos += dt * ball_vector
+            ball_pos += dt * ball_vector * 3.0
         if cut_scene_time > run_engine_timing
             run_engine = true
         show_names = cut_scene_time > names_timing && cut_scene_time < names_timing + names_display_duration
+        if cut_scene_time > starship_start_timing
+            start_ship = true
+        if start_ship
+            ship_velocity += dt * 10.0
+            ball_pos += dt * up * pow(ship_velocity, 2.0)
+
+        if cut_scene_time > thanks_timing
+            show_thanks = true
+
+        if cut_scene_time > 15.0
+            schedule_quit_game()
         return
 
     if get_key(VK_RIGHT)
@@ -592,6 +611,12 @@ def draw_cut_scene
         draw_arrow(float2(600, 265), float2(570, 275))
         text_out(650, 150, "Your star crystals", 0xCC0000)
         draw_arrow(float2(647, 160), float2(622, 170))
+
+    if show_thanks
+        let text = "Thank you for playing!"
+        set_font_size(50)
+        let text_size = get_text_size(text)
+        text_out(get_screen_width() / 2 - int(text_size.x) / 2, get_screen_height() / 2 - int(text_size.y) / 2 - 100, text, 0xFFFFFF)
 
 // this function will be called every frame after 'act',
 // you can draw anything in this function
