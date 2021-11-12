@@ -58,7 +58,7 @@ let
     slow_tunel_edge_color = 0xC74949
     base_move_speed = 4.0
     crystal_scale = 0.25
-    crystals_to_win = 1000
+    crystals_to_win = 10
     wall_height = 0.5
     restart_timeout = 5.0
     run_engine_timing = 1.0
@@ -134,6 +134,7 @@ def generate_point(z_offset)
 // 'initialize' runs once when game starts and every hot-reload
 [export]
 def initialize
+    set_antialiasing(4)
     tunel_edge_center_vec = color_to_vec(tunel_edge_center)
     backgroud_color_vec = color_to_vec(backgroud_color)
 
@@ -299,7 +300,7 @@ def act(dt: float)
 
     for wall in walls
         let wall_center = get_wall_center(wall.x, wall.y)
-        let radius = ball_radius + wall_height * 0.5
+        let radius = ball_radius + wall_height * 0.25
         if length(wall_center - ball_pos) < radius
             restart = true
             seconds_to_restart = restart_timeout
@@ -330,23 +331,23 @@ def act(dt: float)
             segments_control_points[rounded_idx] = generate_point(float(current_segment + segments_count))
             segments_edge_points[rounded_prev_idx] <- generate_edge_points(segments_control_points[rounded_prev_idx], segments_control_points[rounded_idx])
 
-            let rand_value = random::random_int(seed) % 5
-            if rand_value == 0
+            let rand_value = random::random_int(seed) % 15
+            if rand_value / 3 == 0
                 crystals |> push(int2(
                     (rounded_prev_idx + segments_count - 1) % segments_count,
                     random::random_int(seed) % ((sectors_count - 1) / 2) + sectors_count / 2
                 ))
-            // if rand_value == 1
-            //     walls |> push(int2(
-            //         (rounded_prev_idx + segments_count - 1) % segments_count,
-            //         random::random_int(seed) % sectors_count
-            //     ))
-            if rand_value == 2
+            if rand_value == 4
+                walls |> push(int2(
+                    (rounded_prev_idx + segments_count - 1) % segments_count,
+                    random::random_int(seed) % sectors_count
+                ))
+            if rand_value / 3 == 2
                 fast_panels |> push(int2(
                     (rounded_prev_idx + segments_count - 1) % segments_count,
                     random::random_int(seed) % sectors_count
                 ))
-            if rand_value == 3
+            if rand_value / 3 == 3
                 slow_panels |> push(int2(
                     (rounded_prev_idx + segments_count - 1) % segments_count,
                     random::random_int(seed) % sectors_count
@@ -504,15 +505,20 @@ def draw_ball(pos)
     let radius = projected_pos.y - projected_top
     graphics::fill_circle(projected_pos.x, projected_pos.y, radius, ball_color)
 
-    // for x in range(projected_pos.x - radius, projected_pos.x + radius)
-    //     for y in range(projected_pos.y - radius, projected_pos.y + radius)
-    //         if pow(float(x) - projected_pos.x, 2.0) + pow(float(y) - projected_pos.y, 2.0) > radius * radius
-    //             continue
+    // to_center = pos - camera_pos
+    // let trace_radius = radius * 1.5
+    // for x in range(projected_pos.x - trace_radius, projected_pos.x + trace_radius)
+    //     for y in range(projected_pos.y - trace_radius, projected_pos.y + trace_radius)
+    //         // if pow(float(x) - projected_pos.x, 2.0) + pow(float(y) - projected_pos.y, 2.0) > trace_radius * trace_radius
+    //         //     continue
 
-    //         let frag_pos = float2(x, y) / float2(get_screen_width(), get_screen_height()) - float2(0.5)
-    //         let trace_dir = normalize(center_view + frag_pos.x * right + frag_pos.y * up)
+    //         let frag_pos = (
+    //             float2(x, y) / float2(get_screen_height(), get_screen_height()) * 2.0
+    //             - float2(float(get_screen_width()) / float(get_screen_height()), 1.0)
+    //         ) * float2(1, -1)
+    //         let trace_dir = normalize(center_view * sqrt(1.0 - dot(frag_pos, frag_pos)) + frag_pos.x * right + frag_pos.y * up)
     //         let b = -2.0 * dot(trace_dir, to_center)
-    //         let c = ball_radius * ball_radius - dot(to_center, to_center)
+    //         let c = dot(to_center, to_center) - ball_radius * ball_radius
     //         let D = b * b - 4.0 * c
     //         if D < 0.0
     //             continue
@@ -639,9 +645,10 @@ def draw_ui
 def draw_post_mortem_ui
     let text = "If he dies, he dies."
     set_font_size(50)
-    let text_size = get_text_size(text)
+    var text_size = get_text_size(text)
     text_out(get_screen_width() / 2 - int(text_size.x) / 2, get_screen_height() / 2 - int(text_size.y) / 2 - 100, text, 0xFFFFFF)
     let counter = "Try again in {int(seconds_to_restart)} seconds"
+    text_size = get_text_size(counter)
     text_out(get_screen_width() / 2 - int(text_size.x) / 2, get_screen_height() / 2 - int(text_size.y) / 2, counter, 0xFFFFFF)
 
 def draw_layer(idx, no_objects, no_tunel)
