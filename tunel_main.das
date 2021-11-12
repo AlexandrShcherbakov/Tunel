@@ -45,6 +45,8 @@ var
     start_ship: bool
     ship_velocity: float
     show_thanks: bool
+    fast_panels: array<int2>
+    slow_panels: array<int2>
 
 let
     segment_width = 1.0
@@ -55,9 +57,9 @@ let
     base_tunel_edge_color = 0x4B4BCE
     fast_tunel_edge_color = 0x4BCE61
     slow_tunel_edge_color = 0xC74949
-    lowest_move_speed = 4.0
+    base_move_speed = 4.0
     crystal_scale = 0.25
-    crystals_to_win = 10
+    crystals_to_win = 1000
     wall_height = 0.5
     restart_timeout = 5.0
     run_engine_timing = 1.0
@@ -76,7 +78,7 @@ def reset
     one_segment_point_back = generate_point(-1.0)
     slice_ball_pos = float2(0, 0)
     slice_ball_vel = float2(0, 0)
-    move_speed = lowest_move_speed
+    move_speed = base_move_speed
     shadow_scale = 0.9
     current_time = 0.0
     seed = int4(762, 22, 3, 4)
@@ -91,6 +93,8 @@ def reset
     start_ship = false
     ship_velocity = 0.0
     show_thanks = false
+    fast_panels |> clear()
+    slow_panels |> clear()
 
     segments_control_points |> resize(segments_count)
     for i in range(segments_count)
@@ -220,12 +224,15 @@ def act(dt: float)
         slice_ball_vel.x += 4.0 * dt
     if get_key(VK_LEFT)
         slice_ball_vel.x -= 4.0 * dt
-    if get_key(VK_UP)
-        move_speed = min(move_speed + 4.0 * dt, 8.0)
-    if get_key(VK_DOWN)
-        move_speed = max(move_speed - 4.0 * dt, lowest_move_speed)
+    // if get_key(VK_UP)
+    //     move_speed = min(move_speed + 4.0 * dt, 8.0)
+    // if get_key(VK_DOWN)
+    //     move_speed = max(move_speed - 4.0 * dt, lowest_move_speed)
 
-    move_speed = max(move_speed * 0.999, lowest_move_speed)
+    if move_speed > base_move_speed
+        move_speed = max(move_speed * 0.999, base_move_speed)
+    if move_speed < base_move_speed
+        move_speed = min(move_speed * 1.01, base_move_speed)
 
     let scaled_dt = dt * move_speed
 
@@ -288,6 +295,18 @@ def act(dt: float)
             restart = true
             seconds_to_restart = restart_timeout
 
+    for panel in fast_panels
+        let panel_center = get_panel_center(panel.x, panel.y)
+        let radius = ball_radius + 0.1
+        if length(panel_center - ball_pos) < radius
+            move_speed = 8.0
+
+    for panel in slow_panels
+        let panel_center = get_panel_center(panel.x, panel.y)
+        let radius = ball_radius + 0.1
+        if length(panel_center - ball_pos) < radius
+            move_speed = 3.0
+
     let new_segment = int(camera_pos.z)
     if new_segment != current_segment
         if win
@@ -313,6 +332,16 @@ def act(dt: float)
             //         (rounded_prev_idx + segments_count - 1) % segments_count,
             //         random::random_int(seed) % sectors_count
             //     ))
+            if rand_value == 2
+                fast_panels |> push(int2(
+                    (rounded_prev_idx + segments_count - 1) % segments_count,
+                    random::random_int(seed) % sectors_count
+                ))
+            if rand_value == 3
+                slow_panels |> push(int2(
+                    (rounded_prev_idx + segments_count - 1) % segments_count,
+                    random::random_int(seed) % sectors_count
+                ))
 
             var filtered_crystals: array<int2>
             for crys in crystals
@@ -327,6 +356,20 @@ def act(dt: float)
                     continue
                 filtered_walls |> push(wall)
             walls <- filtered_walls
+
+            var filtered_fast_panels: array<int2>
+            for panel in fast_panels
+                if panel.x == rounded_idx
+                    continue
+                filtered_fast_panels |> push(panel)
+            fast_panels <- filtered_fast_panels
+
+            var filtered_slow_panels: array<int2>
+            for panel in slow_panels
+                if panel.x == rounded_idx
+                    continue
+                filtered_slow_panels |> push(panel)
+            slow_panels <- filtered_slow_panels
 
     current_segment = new_segment
 
@@ -557,6 +600,11 @@ def draw_wall(segment_id, sector_idx)
     for i in range(points|>length())
         draw_edge(points[i], points[(i + 1) % points |> length()], tunel_edge_color_vec)
 
+def get_panel_center(segment_id, sector_idx)
+    let x = segments_edge_points[segment_id][(sector_idx + 1) % sectors_count] - segments_edge_points[segment_id][sector_idx]
+    let y = segments_edge_points[(segment_id + 1) % segments_count][sector_idx] - segments_edge_points[segment_id][sector_idx]
+    return segments_edge_points[segment_id][sector_idx] + x * 0.5 + y * 0.5
+
 def draw_accel_panel(segment_id, sector_idx)
     let x = segments_edge_points[segment_id][(sector_idx + 1) % sectors_count] - segments_edge_points[segment_id][sector_idx]
     let y = segments_edge_points[(segment_id + 1) % segments_count][sector_idx] - segments_edge_points[segment_id][sector_idx]
@@ -592,7 +640,12 @@ def draw_layer(idx, no_objects, no_tunel)
         for i in range(sectors_count)
             draw_edge(segments_edge_points[idx][i], segments_edge_points[(idx + segments_count - 1) % segments_count][i], tunel_edge_color_vec)
             draw_edge(segments_edge_points[idx][i], segments_edge_points[idx][(i + 1) % sectors_count], tunel_edge_color_vec)
-        draw_deaccel_panel(idx, 7)
+        for panel in fast_panels
+            if panel.x == idx
+                draw_accel_panel(panel.x, panel.y)
+        for panel in slow_panels
+            if panel.x == idx
+                draw_deaccel_panel(panel.x, panel.y)
     if no_objects
         return
     for crystal in crystals
