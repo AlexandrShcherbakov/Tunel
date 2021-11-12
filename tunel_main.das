@@ -1,4 +1,5 @@
 require daslib/media
+require daslib/functional
 options debugger            // uncomment for debug in VS Code
 require daslib/debug        // uncomment for debug in VS Code
 
@@ -20,12 +21,14 @@ var
     segments_edge_points : array<array<float3>>
     current_segment: int
     one_segment_point_back: float3
-    force: float
     slice_ball_pos: float2
     slice_ball_vel: float2
     move_speed: float
     shadow_scale: float
     shadow_pos: float3
+    crystals: array<int2>
+    current_time: float
+    seed: int4
 
 let
     segment_width = 1.0
@@ -34,6 +37,7 @@ let
     tunel_edge_center = 0xE0E0E0
     backgroud_color = 0x2B2B30
     lowest_move_speed = 4.0
+    crystal_scale = 0.25
 
 def reset
     ball_radius = 60.0
@@ -43,11 +47,13 @@ def reset
     right = float3(1, 0, 0)
     current_segment = 0
     one_segment_point_back = generate_point(-1.0)
-    force = 0.0
     slice_ball_pos = float2(0, 0)
     slice_ball_vel = float2(0, 0)
     move_speed = lowest_move_speed
     shadow_scale = 0.9
+    current_time = 0.0
+    seed = int4(762, 22, 3, 4)
+    crystals |> clear()
 
     segments_control_points |> resize(segments_count)
     for i in range(segments_count)
@@ -137,6 +143,7 @@ def act(dt: float)
 
     slice_ball_vel *= 0.99
 
+    current_time += dt
 
     camera_pos += center_view * scaled_dt
 
@@ -170,6 +177,20 @@ def act(dt: float)
         one_segment_point_back = segments_control_points[rounded_idx]
         segments_control_points[rounded_idx] = generate_point(float(current_segment + segments_count))
         segments_edge_points[rounded_prev_idx] <- generate_edge_points(segments_control_points[rounded_prev_idx], segments_control_points[rounded_idx])
+
+        if random::random_int(seed) % 5 == 0
+            crystals |> push(int2(
+                (rounded_prev_idx + segments_count - 1) % segments_count,
+                random::random_int(seed) % ((sectors_count - 1) / 2) + sectors_count / 2
+            ))
+
+        var filtered_crystals: array<int2>
+        for crys in crystals
+            if crys.x == rounded_idx
+                continue
+            filtered_crystals |> push(crys)
+        crystals <- filtered_crystals
+
     current_segment = new_segment
 
     return
@@ -307,6 +328,59 @@ def draw_segment(idx)
         draw_edge(segments_edge_points[rel_idx][i], segments_edge_points[(rel_idx + segments_count - 1) % segments_count][i])
         draw_edge(segments_edge_points[rel_idx][i], segments_edge_points[rel_idx][(i + 1) % sectors_count])
 
+def draw_crystal(segment_id, sector_idx)
+    var points : array<float3>
+    let segments = 14
+    let cell_center = (
+        segments_edge_points[segment_id][sector_idx]
+        + segments_edge_points[segment_id][(sector_idx + 1) % sectors_count]
+        + segments_edge_points[(segment_id + 1) % segments_count][(sector_idx + 1) % sectors_count]
+        + segments_edge_points[(segment_id + 1) % segments_count][sector_idx]
+    ) * 0.25
+    let seg_normal = normalize(cross(
+        segments_edge_points[segment_id][(sector_idx + 1) % sectors_count] - segments_edge_points[segment_id][sector_idx],
+        + segments_edge_points[(segment_id + 1) % segments_count][sector_idx] - segments_edge_points[segment_id][sector_idx]
+    ))
+    for i in range(segments)
+        let angle = float(i) / float(segments) * math::PI * 2.0
+        let x = (cos(angle) * crystal_scale)
+        let y = (sin(angle) * crystal_scale)
+        points |> push(float3(x, y, 0.0) + cell_center + seg_normal * (crystal_scale * lerp(1.7, 1.0, sin(current_time * 5.0 + float(segment_id)) * 0.5 + 0.5)))
+
+    let to_point <- [{ for point in points; point - camera_pos }]
+    let z_values <- [{ for vec in to_point; dot(vec, center_view) }]
+    if all([{ for z in z_values; z < 1e-5 }])
+        return
+
+    var z_corrected_points: array<float3>
+
+    for i in range(segments)
+        let prev_idx = (i + segments - 1) % segments
+        let next_idx = (i + 1) % segments
+        if z_values[i] > 1e-5
+            z_corrected_points |> push(points[i])
+            continue
+
+        if z_values[prev_idx] > 1e-5
+            let dir = normalize(points[prev_idx] - points[i])
+            let t = max(-dot(to_point[i], center_view) / dot(dir, center_view), 0.0) + 1e-3
+            z_corrected_points |> push(points[i] + t * dir)
+
+        if z_values[next_idx] > 1e-5
+            let dir = normalize(points[next_idx] - points[i])
+            let t = max(-dot(to_point[i], center_view) / dot(dir, center_view), 0.0) + 1e-3
+            z_corrected_points |> push(points[i] + t * dir)
+
+    var z_corrected_to_points <- [{ for point in z_corrected_points; point - camera_pos }]
+    let corrected_z <- [{ for vec in z_corrected_to_points; dot(vec, center_view) }]
+    z_corrected_to_points <- [{ for point, z in z_corrected_to_points, corrected_z; point / z }]
+    let projected_pos <- [{for to_center in z_corrected_to_points; float2(
+        (dot(to_center, right) + float(get_screen_width()) / float(get_screen_height())) * 0.5 * float(get_screen_height()),
+        (-dot(to_center, up) + 1.0) * 0.5 * float(get_screen_height())
+    )}]
+
+    graphics::fill_convex_polygon(projected_pos, 0xFFFFFF)
+
 // this function will be called every frame after 'act',
 // you can draw anything in this function
 [export]
@@ -315,5 +389,7 @@ def draw
     for i in range(segments_count - 2)
         draw_segment(segments_count - 3 - i)
     draw_ball_shadow(shadow_pos)
+    for crystal in crystals
+        draw_crystal(crystal.x, crystal.y)
     draw_ball(ball_pos)
     return
