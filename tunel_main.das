@@ -33,6 +33,8 @@ var
     gathered_crystals:int
     ball_z: float
     walls: array<int2>
+    restart = false
+    seconds_to_restart: float
 
 let
     segment_width = 1.0
@@ -44,6 +46,7 @@ let
     crystal_scale = 0.25
     crystals_to_win = 100
     wall_height = 0.5
+    restart_timeout = 5.0
 
 def reset
     ball_radius = 0.15 //60.0
@@ -147,6 +150,14 @@ def act(dt: float)
     if get_key(VK_ESCAPE)
         schedule_quit_game()
 
+    if restart
+        seconds_to_restart -= dt
+        if seconds_to_restart < 0.0
+            seconds_to_restart = 0.0
+            restart = false
+            reset()
+        return
+
     if get_key(VK_SPACE)
         reset()
 
@@ -214,14 +225,12 @@ def act(dt: float)
     for to_rem_idx in crystals_to_remove
         crystals |> erase(to_rem_idx)
 
-    var collided = false
     for wall in walls
         let wall_center = get_wall_center(wall.x, wall.y)
         let radius = ball_radius + wall_height * 0.5
         if length(wall_center - ball_pos) < radius
-            collided = true
-    if collided
-        reset()
+            restart = true
+            seconds_to_restart = restart_timeout
 
     let new_segment = int(camera_pos.z)
     if new_segment != current_segment
@@ -491,7 +500,16 @@ def draw_wall(segment_id, sector_idx, far)
         draw_edge(points[i], points[(i + 1) % points |> length()])
 
 def draw_ui
+    set_font_size(15)
     text_out(100, 30, "{gathered_crystals} of {crystals_to_win} crystals gathered", 0xFFFFFF)
+
+def draw_post_mortem_ui
+    let text = "If he dies, he dies."
+    set_font_size(50)
+    let text_size = get_text_size(text)
+    text_out(get_screen_width() / 2 - int(text_size.x) / 2, get_screen_height() / 2 - int(text_size.y) / 2 - 100, text, 0xFFFFFF)
+    let counter = "Try again in {int(seconds_to_restart)} seconds"
+    text_out(get_screen_width() / 2 - int(text_size.x) / 2, get_screen_height() / 2 - int(text_size.y) / 2, counter, 0xFFFFFF)
 
 // this function will be called every frame after 'act',
 // you can draw anything in this function
@@ -510,5 +528,8 @@ def draw
         draw_crystal(crystal.x, crystal.y, false)
     for wall in walls
         draw_wall(wall.x, wall.y, false)
-    draw_ui()
+    if restart
+        draw_post_mortem_ui()
+    else
+        draw_ui()
     return
