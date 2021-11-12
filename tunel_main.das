@@ -37,6 +37,8 @@ var
     seconds_to_restart: float
     win = false
     start_segment = 0
+    cut_scene: bool
+    ball_vector: float3
 
 let
     segment_width = 1.0
@@ -46,12 +48,12 @@ let
     backgroud_color = 0x2B2B30
     lowest_move_speed = 4.0
     crystal_scale = 0.25
-    crystals_to_win = 1
+    crystals_to_win = 0
     wall_height = 0.5
     restart_timeout = 5.0
 
 def reset
-    ball_radius = 0.15 //60.0
+    ball_radius = 0.35 //60.0
     camera_pos = float3(0.0, 0.0, 0.0)
     center_view = float3(0, 0, 1)
     up = float3(0, 1, 0)
@@ -69,6 +71,7 @@ def reset
     gathered_crystals = 0
     win = false
     start_segment = 0
+    cut_scene = false
 
     segments_control_points |> resize(segments_count)
     for i in range(segments_count)
@@ -146,6 +149,15 @@ def get_wall_center(segment_id, sector_idx)
         + seg_normal * 0.5 * wall_height
     )
 
+def set_up_cut_scene
+    cut_scene = true
+    ball_vector = center_view
+    up = normalize(float3(0, 1, 1))
+    center_view = normalize(cross(center_view, up))
+    right = cross(center_view, up)
+    camera_pos = ball_pos - center_view * 15.0
+    current_segment = (current_segment + 4) % segments_count
+
 
 // this function is called to update game data,
 // dt - time elapsed since the previous update (in seconds)
@@ -164,6 +176,10 @@ def act(dt: float)
 
     if get_key(VK_SPACE)
         reset()
+
+    if cut_scene
+        ball_pos += dt * ball_vector
+        return
 
     if get_key(VK_RIGHT)
         slice_ball_vel.x += 4.0 * dt
@@ -241,6 +257,9 @@ def act(dt: float)
     if new_segment != current_segment
         if win
             start_segment++
+            if start_segment == segments_count - 2
+                set_up_cut_scene()
+                return
         else
             let rounded_idx = current_segment % segments_count
             let rounded_prev_idx = (current_segment + segments_count - 1) % segments_count
@@ -254,11 +273,11 @@ def act(dt: float)
                     (rounded_prev_idx + segments_count - 1) % segments_count,
                     random::random_int(seed) % ((sectors_count - 1) / 2) + sectors_count / 2
                 ))
-            if rand_value == 1
-                walls |> push(int2(
-                    (rounded_prev_idx + segments_count - 1) % segments_count,
-                    random::random_int(seed) % sectors_count
-                ))
+            // if rand_value == 1
+            //     walls |> push(int2(
+            //         (rounded_prev_idx + segments_count - 1) % segments_count,
+            //         random::random_int(seed) % sectors_count
+            //     ))
 
             var filtered_crystals: array<int2>
             for crys in crystals
@@ -358,15 +377,15 @@ def draw_ball_shadow(pos)
     if z <= 1e-5
         return
 
-    to_center /= z
-    let projected_pos = float2(
-        (dot(to_center, right) + float(get_screen_width()) / float(get_screen_height())) * 0.5 * float(get_screen_height()),
-        (-dot(to_center, up) + 1.0) * 0.5 * float(get_screen_height()))
-
     var top = to_center - center_view * ball_radius * 0.5 + up * sqrt(3.0) * 0.5 * ball_radius
     var top_z = dot(center_view, top)
     top /= top_z
     let projected_top = (-dot(top, up) + 1.0) * 0.5 * float(get_screen_height())
+
+    to_center /= z
+    let projected_pos = float2(
+        (dot(to_center, right) + float(get_screen_width()) / float(get_screen_height())) * 0.5 * float(get_screen_height()),
+        (-dot(to_center, up) + 1.0) * 0.5 * float(get_screen_height()))
 
     let radius = projected_pos.y - projected_top
     if shadow_scale * radius < 1.0
@@ -385,15 +404,15 @@ def draw_ball(pos)
     if z <= 1e-5
         return
 
-    to_center /= z
-    let projected_pos = float2(
-        (dot(to_center, right) + float(get_screen_width()) / float(get_screen_height())) * 0.5 * float(get_screen_height()),
-        (-dot(to_center, up) + 1.0) * 0.5 * float(get_screen_height()))
-
     var top = to_center - center_view * ball_radius * 0.5 + up * sqrt(3.0) * 0.5 * ball_radius
     var top_z = dot(center_view, top)
     top /= top_z
     let projected_top = (-dot(top, up) + 1.0) * 0.5 * float(get_screen_height())
+
+    to_center /= z
+    let projected_pos = float2(
+        (dot(to_center, right) + float(get_screen_width()) / float(get_screen_height())) * 0.5 * float(get_screen_height()),
+        (-dot(to_center, up) + 1.0) * 0.5 * float(get_screen_height()))
 
     let radius = projected_pos.y - projected_top
     graphics::fill_circle(projected_pos.x, projected_pos.y, radius, ball_color)
@@ -525,10 +544,19 @@ def draw_layer(idx, no_objects, no_tunel)
         if wall.x == idx
             draw_wall(wall.x, wall.y)
 
+def draw_cut_scene
+    for i in range(segments_count - 2)
+        draw_layer((segments_count - 3 - i + current_segment + 1) % segments_count, i >= segments_count - 4, false)
+    draw_ball(ball_pos)
+
 // this function will be called every frame after 'act',
 // you can draw anything in this function
 [export]
 def draw
+    if cut_scene
+        draw_cut_scene()
+        return
+
     graphics::fill_rect(0, 0, get_screen_width(), get_screen_height(), backgroud_color)
     for i in range(start_segment, segments_count - 2)
         draw_layer((segments_count - 3 - i + current_segment + 1) % segments_count, i >= segments_count - 4, false)
