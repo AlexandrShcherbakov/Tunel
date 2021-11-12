@@ -35,6 +35,8 @@ var
     walls: array<int2>
     restart = false
     seconds_to_restart: float
+    win = false
+    start_segment = 0
 
 let
     segment_width = 1.0
@@ -44,7 +46,7 @@ let
     backgroud_color = 0x2B2B30
     lowest_move_speed = 4.0
     crystal_scale = 0.25
-    crystals_to_win = 100
+    crystals_to_win = 1
     wall_height = 0.5
     restart_timeout = 5.0
 
@@ -65,6 +67,8 @@ def reset
     crystals |> clear()
     walls |> clear()
     gathered_crystals = 0
+    win = false
+    start_segment = 0
 
     segments_control_points |> resize(segments_count)
     for i in range(segments_count)
@@ -222,6 +226,7 @@ def act(dt: float)
 
     reverse(crystals_to_remove)
     gathered_crystals += crystals_to_remove |> length()
+    win = gathered_crystals >= crystals_to_win
     for to_rem_idx in crystals_to_remove
         crystals |> erase(to_rem_idx)
 
@@ -234,37 +239,40 @@ def act(dt: float)
 
     let new_segment = int(camera_pos.z)
     if new_segment != current_segment
-        let rounded_idx = current_segment % segments_count
-        let rounded_prev_idx = (current_segment + segments_count - 1) % segments_count
-        one_segment_point_back = segments_control_points[rounded_idx]
-        segments_control_points[rounded_idx] = generate_point(float(current_segment + segments_count))
-        segments_edge_points[rounded_prev_idx] <- generate_edge_points(segments_control_points[rounded_prev_idx], segments_control_points[rounded_idx])
+        if win
+            start_segment++
+        else
+            let rounded_idx = current_segment % segments_count
+            let rounded_prev_idx = (current_segment + segments_count - 1) % segments_count
+            one_segment_point_back = segments_control_points[rounded_idx]
+            segments_control_points[rounded_idx] = generate_point(float(current_segment + segments_count))
+            segments_edge_points[rounded_prev_idx] <- generate_edge_points(segments_control_points[rounded_prev_idx], segments_control_points[rounded_idx])
 
-        let rand_value = random::random_int(seed) % 5
-        if rand_value == 0
-            crystals |> push(int2(
-                (rounded_prev_idx + segments_count - 1) % segments_count,
-                random::random_int(seed) % ((sectors_count - 1) / 2) + sectors_count / 2
-            ))
-        if rand_value == 1
-            walls |> push(int2(
-                (rounded_prev_idx + segments_count - 1) % segments_count,
-                random::random_int(seed) % sectors_count
-            ))
+            let rand_value = random::random_int(seed) % 5
+            if rand_value == 0
+                crystals |> push(int2(
+                    (rounded_prev_idx + segments_count - 1) % segments_count,
+                    random::random_int(seed) % ((sectors_count - 1) / 2) + sectors_count / 2
+                ))
+            if rand_value == 1
+                walls |> push(int2(
+                    (rounded_prev_idx + segments_count - 1) % segments_count,
+                    random::random_int(seed) % sectors_count
+                ))
 
-        var filtered_crystals: array<int2>
-        for crys in crystals
-            if crys.x == rounded_idx
-                continue
-            filtered_crystals |> push(crys)
-        crystals <- filtered_crystals
+            var filtered_crystals: array<int2>
+            for crys in crystals
+                if crys.x == rounded_idx
+                    continue
+                filtered_crystals |> push(crys)
+            crystals <- filtered_crystals
 
-        var filtered_walls: array<int2>
-        for wall in walls
-            if wall.x == rounded_idx
-                continue
-            filtered_walls |> push(wall)
-        walls <- filtered_walls
+            var filtered_walls: array<int2>
+            for wall in walls
+                if wall.x == rounded_idx
+                    continue
+                filtered_walls |> push(wall)
+            walls <- filtered_walls
 
     current_segment = new_segment
 
@@ -522,7 +530,7 @@ def draw_layer(idx, no_objects, no_tunel)
 [export]
 def draw
     graphics::fill_rect(0, 0, get_screen_width(), get_screen_height(), backgroud_color)
-    for i in range(segments_count - 2)
+    for i in range(start_segment, segments_count - 2)
         draw_layer((segments_count - 3 - i + current_segment + 1) % segments_count, i >= segments_count - 4, false)
     draw_ball_shadow(shadow_pos)
     draw_ball(ball_pos)
