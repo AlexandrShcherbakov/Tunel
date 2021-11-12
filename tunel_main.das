@@ -42,6 +42,7 @@ let
     lowest_move_speed = 4.0
     crystal_scale = 0.25
     crystals_to_win = 100
+    wall_height = 0.5
 
 def reset
     ball_radius = 0.15 //60.0
@@ -371,30 +372,7 @@ def draw_segment(idx)
         draw_edge(segments_edge_points[rel_idx][i], segments_edge_points[(rel_idx + segments_count - 1) % segments_count][i])
         draw_edge(segments_edge_points[rel_idx][i], segments_edge_points[rel_idx][(i + 1) % sectors_count])
 
-def draw_crystal(segment_id, sector_idx, far)
-    var points : array<float3>
-    let segments = 6
-    let cell_center = (
-        segments_edge_points[segment_id][sector_idx]
-        + segments_edge_points[segment_id][(sector_idx + 1) % sectors_count]
-        + segments_edge_points[(segment_id + 1) % segments_count][(sector_idx + 1) % sectors_count]
-        + segments_edge_points[(segment_id + 1) % segments_count][sector_idx]
-    ) * 0.25
-    let seg_normal = normalize(cross(
-        segments_edge_points[segment_id][(sector_idx + 1) % sectors_count] - segments_edge_points[segment_id][sector_idx],
-        + segments_edge_points[(segment_id + 1) % segments_count][sector_idx] - segments_edge_points[segment_id][sector_idx]
-    ))
-    let crystal_center = get_crystal_center(segment_id, sector_idx)
-    let crystal_z = dot(crystal_center - camera_pos, center_view)
-    if far != crystal_z > ball_z
-        return
-
-    for i in range(segments)
-        let angle = float(i) / float(segments) * math::PI * 2.0
-        let x = (cos(angle) * crystal_scale)
-        let y = (sin(angle) * crystal_scale)
-        points |> push(float3(x, y, 0.0) + crystal_center)
-
+def draw_flat_convex(points, color)
     let to_point <- [{ for point in points; point - camera_pos }]
     let z_values <- [{ for vec in to_point; dot(vec, center_view) }]
     if all([{ for z in z_values; z < 1e-5 }])
@@ -402,6 +380,7 @@ def draw_crystal(segment_id, sector_idx, far)
 
     var z_corrected_points: array<float3>
 
+    let segments = points |> length()
     for i in range(segments)
         let prev_idx = (i + segments - 1) % segments
         let next_idx = (i + 1) % segments
@@ -427,7 +406,57 @@ def draw_crystal(segment_id, sector_idx, far)
         (-dot(to_center, up) + 1.0) * 0.5 * float(get_screen_height())
     )}]
 
-    graphics::fill_convex_polygon(projected_pos, 0xC77509)
+    graphics::fill_convex_polygon(projected_pos, color)
+
+def draw_crystal(segment_id, sector_idx, far)
+    var points : array<float3>
+    let segments = 6
+    let cell_center = (
+        segments_edge_points[segment_id][sector_idx]
+        + segments_edge_points[segment_id][(sector_idx + 1) % sectors_count]
+        + segments_edge_points[(segment_id + 1) % segments_count][(sector_idx + 1) % sectors_count]
+        + segments_edge_points[(segment_id + 1) % segments_count][sector_idx]
+    ) * 0.25
+    let seg_normal = normalize(cross(
+        segments_edge_points[segment_id][(sector_idx + 1) % sectors_count] - segments_edge_points[segment_id][sector_idx],
+        + segments_edge_points[(segment_id + 1) % segments_count][sector_idx] - segments_edge_points[segment_id][sector_idx]
+    ))
+    let crystal_center = get_crystal_center(segment_id, sector_idx)
+    let crystal_z = dot(crystal_center - camera_pos, center_view)
+    if far != crystal_z > ball_z
+        return
+
+    for i in range(segments)
+        let angle = float(i) / float(segments) * math::PI * 2.0
+        let x = (cos(angle) * crystal_scale)
+        let y = (sin(angle) * crystal_scale)
+        points |> push(float3(x, y, 0.0) + crystal_center)
+
+    draw_flat_convex(points, 0xC77509)
+
+def draw_wall(segment_id, sector_idx, far)
+    var points : array<float3>
+    let seg_normal = normalize(cross(
+        segments_edge_points[segment_id][(sector_idx + 1) % sectors_count] - segments_edge_points[segment_id][sector_idx],
+        + segments_edge_points[(segment_id + 1) % segments_count][sector_idx] - segments_edge_points[segment_id][sector_idx]
+    ))
+    let wall_center = (
+        (segments_edge_points[segment_id][(sector_idx + 1) % sectors_count] + segments_edge_points[segment_id][sector_idx]) * 0.5
+        + seg_normal * 0.5 * wall_height
+    )
+    let wall_z = dot(wall_center - camera_pos, center_view)
+    if far != wall_z > ball_z
+        return
+
+    points |> push(segments_edge_points[segment_id][sector_idx])
+    points |> push(segments_edge_points[segment_id][(sector_idx + 1) % sectors_count])
+    points |> push(segments_edge_points[segment_id][(sector_idx + 1) % sectors_count] + seg_normal * wall_height)
+    points |> push(segments_edge_points[segment_id][sector_idx] + seg_normal * wall_height)
+
+    draw_flat_convex(points, backgroud_color)
+
+    for i in range(points|>length())
+        draw_edge(points[i], points[(i + 1) % points |> length()])
 
 def draw_ui
     text_out(100, 30, "{gathered_crystals} of {crystals_to_win} crystals gathered", 0xFFFFFF)
@@ -442,8 +471,12 @@ def draw
     draw_ball_shadow(shadow_pos)
     for crystal in crystals
         draw_crystal(crystal.x, crystal.y, true)
+
+    draw_wall(17, 7, true)
     draw_ball(ball_pos)
     for crystal in crystals
         draw_crystal(crystal.x, crystal.y, false)
+
+    draw_wall(17, 7, false)
     draw_ui()
     return
