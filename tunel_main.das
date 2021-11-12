@@ -1,5 +1,6 @@
 require daslib/media
 require daslib/functional
+require daslib/algorithm
 options debugger            // uncomment for debug in VS Code
 require daslib/debug        // uncomment for debug in VS Code
 
@@ -40,7 +41,7 @@ let
     crystal_scale = 0.25
 
 def reset
-    ball_radius = 60.0
+    ball_radius = 0.15 //60.0
     camera_pos = float3(0.0, 0.0, 0.0)
     center_view = float3(0, 0, 1)
     up = float3(0, 1, 0)
@@ -108,6 +109,19 @@ def easeInOutSine(x)
     return -(cos(math::PI * x) - 1.0) / 2.0;
 
 
+def get_crystal_center(segment_id, sector_idx)
+    let cell_center = (
+        segments_edge_points[segment_id][sector_idx]
+        + segments_edge_points[segment_id][(sector_idx + 1) % sectors_count]
+        + segments_edge_points[(segment_id + 1) % segments_count][(sector_idx + 1) % sectors_count]
+        + segments_edge_points[(segment_id + 1) % segments_count][sector_idx]
+    ) * 0.25
+    let seg_normal = normalize(cross(
+        segments_edge_points[segment_id][(sector_idx + 1) % sectors_count] - segments_edge_points[segment_id][sector_idx],
+        + segments_edge_points[(segment_id + 1) % segments_count][sector_idx] - segments_edge_points[segment_id][sector_idx]
+    ))
+    return cell_center + seg_normal * (crystal_scale * lerp(1.7, 1.0, sin(current_time * 5.0 + float(segment_id)) * 0.5 + 0.5))
+
 
 // this function is called to update game data,
 // dt - time elapsed since the previous update (in seconds)
@@ -169,6 +183,17 @@ def act(dt: float)
     ball_pos = ball_base_pos + slice_ball_pos.y * up + slice_ball_pos.x * right
     shadow_pos = ball_base_pos + shadow_slice_pos.y * up + shadow_slice_pos.x * right
     shadow_scale = lerp(0.9, 0.0, (slice_ball_pos.y + 1.0) * 0.5)
+
+    var crystals_to_remove: array<int>
+    for idx, crys in range(crystals |> length()), crystals
+        let crystal_center = get_crystal_center(crys.x, crys.y)
+        let radius = ball_radius + crystal_scale
+        if length(crystal_center - ball_pos) < radius
+            crystals_to_remove |> push(idx)
+
+    reverse(crystals_to_remove)
+    for to_rem_idx in crystals_to_remove
+        crystals |> erase(to_rem_idx)
 
     let new_segment = int(camera_pos.z)
     if new_segment != current_segment
@@ -277,13 +302,18 @@ def draw_ball_shadow(pos)
         (dot(to_center, right) + float(get_screen_width()) / float(get_screen_height())) * 0.5 * float(get_screen_height()),
         (-dot(to_center, up) + 1.0) * 0.5 * float(get_screen_height()))
 
-    let radius = ball_radius / z * 2.0
+    var top = to_center - center_view * ball_radius * 0.5 + up * sqrt(3.0) * 0.5 * ball_radius
+    var top_z = dot(center_view, top)
+    top /= top_z
+    let projected_top = (-dot(top, up) + 1.0) * 0.5 * float(get_screen_height())
+
+    let radius = projected_pos.y - projected_top
     if shadow_scale * radius < 1.0
         return
 
     graphics::enable_alpha_blend()
     let alpha = min(uint(255.0 * max(shadow_scale, 0.0) * 0.8), 255u)
-    graphics::fill_circle(projected_pos.x, projected_pos.y + 80.0, radius * shadow_scale, 0x000A0A0Au | (alpha << 24u))
+    graphics::fill_circle(projected_pos.x, projected_pos.y + 60.0, radius * shadow_scale, 0x000A0A0Au | (alpha << 24u))
     graphics::disable_alpha_blend()
 
 
@@ -299,7 +329,12 @@ def draw_ball(pos)
         (dot(to_center, right) + float(get_screen_width()) / float(get_screen_height())) * 0.5 * float(get_screen_height()),
         (-dot(to_center, up) + 1.0) * 0.5 * float(get_screen_height()))
 
-    let radius = ball_radius / z * 2.0
+    var top = to_center - center_view * ball_radius * 0.5 + up * sqrt(3.0) * 0.5 * ball_radius
+    var top_z = dot(center_view, top)
+    top /= top_z
+    let projected_top = (-dot(top, up) + 1.0) * 0.5 * float(get_screen_height())
+
+    let radius = projected_pos.y - projected_top
     graphics::fill_circle(projected_pos.x, projected_pos.y, radius, ball_color)
 
     // let phys_radius = 0.3//radius / float(get_screen_height()) * 16.0
@@ -341,11 +376,12 @@ def draw_crystal(segment_id, sector_idx)
         segments_edge_points[segment_id][(sector_idx + 1) % sectors_count] - segments_edge_points[segment_id][sector_idx],
         + segments_edge_points[(segment_id + 1) % segments_count][sector_idx] - segments_edge_points[segment_id][sector_idx]
     ))
+    let crystal_center = get_crystal_center(segment_id, sector_idx)
     for i in range(segments)
         let angle = float(i) / float(segments) * math::PI * 2.0
         let x = (cos(angle) * crystal_scale)
         let y = (sin(angle) * crystal_scale)
-        points |> push(float3(x, y, 0.0) + cell_center + seg_normal * (crystal_scale * lerp(1.7, 1.0, sin(current_time * 5.0 + float(segment_id)) * 0.5 + 0.5)))
+        points |> push(float3(x, y, 0.0) + crystal_center)
 
     let to_point <- [{ for point in points; point - camera_pos }]
     let z_values <- [{ for vec in to_point; dot(vec, center_view) }]
