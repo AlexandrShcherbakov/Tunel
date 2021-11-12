@@ -451,7 +451,7 @@ def draw_flat_convex(points, color)
 
     graphics::fill_convex_polygon(projected_pos, color)
 
-def draw_crystal(segment_id, sector_idx, far)
+def draw_crystal(segment_id, sector_idx)
     var points : array<float3>
     let segments = 6
     let cell_center = (
@@ -465,9 +465,6 @@ def draw_crystal(segment_id, sector_idx, far)
         + segments_edge_points[(segment_id + 1) % segments_count][sector_idx] - segments_edge_points[segment_id][sector_idx]
     ))
     let crystal_center = get_crystal_center(segment_id, sector_idx)
-    let crystal_z = dot(crystal_center - camera_pos, center_view)
-    if far != crystal_z > ball_z
-        return
 
     for i in range(segments)
         let angle = float(i) / float(segments) * math::PI * 2.0
@@ -477,17 +474,12 @@ def draw_crystal(segment_id, sector_idx, far)
 
     draw_flat_convex(points, 0xC77509)
 
-def draw_wall(segment_id, sector_idx, far)
+def draw_wall(segment_id, sector_idx)
     var points : array<float3>
     let seg_normal = normalize(cross(
         segments_edge_points[segment_id][(sector_idx + 1) % sectors_count] - segments_edge_points[segment_id][sector_idx],
         + segments_edge_points[(segment_id + 1) % segments_count][sector_idx] - segments_edge_points[segment_id][sector_idx]
     ))
-
-    let wall_center = get_wall_center(segment_id, sector_idx)
-    let wall_z = dot(wall_center - camera_pos, center_view)
-    if far != wall_z > ball_z
-        return
 
     points |> push(segments_edge_points[segment_id][sector_idx])
     points |> push(segments_edge_points[segment_id][(sector_idx + 1) % sectors_count])
@@ -511,23 +503,32 @@ def draw_post_mortem_ui
     let counter = "Try again in {int(seconds_to_restart)} seconds"
     text_out(get_screen_width() / 2 - int(text_size.x) / 2, get_screen_height() / 2 - int(text_size.y) / 2, counter, 0xFFFFFF)
 
+def draw_layer(idx, no_objects, no_tunel)
+    if !no_tunel
+        for i in range(sectors_count)
+            draw_edge(segments_edge_points[idx][i], segments_edge_points[(idx + segments_count - 1) % segments_count][i])
+            draw_edge(segments_edge_points[idx][i], segments_edge_points[idx][(i + 1) % sectors_count])
+    if no_objects
+        return
+    for crystal in crystals
+        if crystal.x == idx
+            draw_crystal(crystal.x, crystal.y)
+    for wall in walls
+        if wall.x == idx
+            draw_wall(wall.x, wall.y)
+
 // this function will be called every frame after 'act',
 // you can draw anything in this function
 [export]
 def draw
     graphics::fill_rect(0, 0, get_screen_width(), get_screen_height(), backgroud_color)
     for i in range(segments_count - 2)
-        draw_segment(segments_count - 3 - i)
+        draw_layer((segments_count - 3 - i + current_segment + 1) % segments_count, i >= segments_count - 4, false)
     draw_ball_shadow(shadow_pos)
-    for crystal in crystals
-        draw_crystal(crystal.x, crystal.y, true)
-    for wall in walls
-        draw_wall(wall.x, wall.y, true)
     draw_ball(ball_pos)
-    for crystal in crystals
-        draw_crystal(crystal.x, crystal.y, false)
-    for wall in walls
-        draw_wall(wall.x, wall.y, false)
+    for i in range(segments_count - 4, segments_count - 2)
+        draw_layer((segments_count - 3 - i + current_segment + 1) % segments_count, false, true)
+
     if restart
         draw_post_mortem_ui()
     else
