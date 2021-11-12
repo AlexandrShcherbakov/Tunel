@@ -30,6 +30,7 @@ var
     crystals: array<int2>
     current_time: float
     seed: int4
+    gathered_crystals:int
 
 let
     segment_width = 1.0
@@ -39,6 +40,7 @@ let
     backgroud_color = 0x2B2B30
     lowest_move_speed = 4.0
     crystal_scale = 0.25
+    crystals_to_win = 100
 
 def reset
     ball_radius = 0.15 //60.0
@@ -55,6 +57,7 @@ def reset
     current_time = 0.0
     seed = int4(762, 22, 3, 4)
     crystals |> clear()
+    gathered_crystals = 0
 
     segments_control_points |> resize(segments_count)
     for i in range(segments_count)
@@ -192,6 +195,7 @@ def act(dt: float)
             crystals_to_remove |> push(idx)
 
     reverse(crystals_to_remove)
+    gathered_crystals += crystals_to_remove |> length()
     for to_rem_idx in crystals_to_remove
         crystals |> erase(to_rem_idx)
 
@@ -417,6 +421,9 @@ def draw_crystal(segment_id, sector_idx)
 
     graphics::fill_convex_polygon(projected_pos, 0xC77509)
 
+def draw_ui
+    text_out(100, 30, "{gathered_crystals} of {crystals_to_win} crystals gathered", 0xFFFFFF)
+
 // this function will be called every frame after 'act',
 // you can draw anything in this function
 [export]
@@ -428,4 +435,5 @@ def draw
     for crystal in crystals
         draw_crystal(crystal.x, crystal.y)
     draw_ball(ball_pos)
+    draw_ui()
     return
