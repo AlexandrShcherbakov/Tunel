@@ -39,6 +39,8 @@ var
     start_segment = 0
     cut_scene: bool
     ball_vector: float3
+    run_engine: bool
+    cut_scene_time:float
 
 let
     segment_width = 1.0
@@ -48,9 +50,10 @@ let
     backgroud_color = 0x2B2B30
     lowest_move_speed = 4.0
     crystal_scale = 0.25
-    crystals_to_win = 0
+    crystals_to_win = 6
     wall_height = 0.5
     restart_timeout = 5.0
+    run_engine_timing = 3.0
 
 def reset
     ball_radius = 0.35 //60.0
@@ -72,6 +75,8 @@ def reset
     win = false
     start_segment = 0
     cut_scene = false
+    run_engine = false
+    cut_scene_time = 0.0
 
     segments_control_points |> resize(segments_count)
     for i in range(segments_count)
@@ -155,7 +160,7 @@ def set_up_cut_scene
     up = normalize(float3(0, 1, 1))
     center_view = normalize(cross(center_view, up))
     right = cross(center_view, up)
-    camera_pos = ball_pos - center_view * 15.0
+    camera_pos = ball_pos - center_view * 10.0
     current_segment = (current_segment + 4) % segments_count
 
 
@@ -178,7 +183,11 @@ def act(dt: float)
         reset()
 
     if cut_scene
-        ball_pos += dt * ball_vector
+        cut_scene_time += dt
+        if !run_engine
+            ball_pos += dt * ball_vector
+        if cut_scene_time > run_engine_timing
+            run_engine = true
         return
 
     if get_key(VK_RIGHT)
@@ -478,9 +487,7 @@ def draw_flat_convex(points, color)
 
     graphics::fill_convex_polygon(projected_pos, color)
 
-def draw_crystal(segment_id, sector_idx)
-    var points : array<float3>
-    let segments = 6
+def draw_in_game_crystal(segment_id, sector_idx)
     let cell_center = (
         segments_edge_points[segment_id][sector_idx]
         + segments_edge_points[segment_id][(sector_idx + 1) % sectors_count]
@@ -493,11 +500,17 @@ def draw_crystal(segment_id, sector_idx)
     ))
     let crystal_center = get_crystal_center(segment_id, sector_idx)
 
+    draw_crystal(crystal_center, float3(1, 0, 0), float3(0, 1, 0))
+
+def draw_crystal(crystal_center, right, up)
+    var points : array<float3>
+
+    let segments = 6
     for i in range(segments)
         let angle = float(i) / float(segments) * math::PI * 2.0
         let x = (cos(angle) * crystal_scale)
         let y = (sin(angle) * crystal_scale)
-        points |> push(float3(x, y, 0.0) + crystal_center)
+        points |> push(x * right + y * up + crystal_center)
 
     draw_flat_convex(points, 0xC77509)
 
@@ -539,7 +552,7 @@ def draw_layer(idx, no_objects, no_tunel)
         return
     for crystal in crystals
         if crystal.x == idx
-            draw_crystal(crystal.x, crystal.y)
+            draw_in_game_crystal(crystal.x, crystal.y)
     for wall in walls
         if wall.x == idx
             draw_wall(wall.x, wall.y)
@@ -547,6 +560,17 @@ def draw_layer(idx, no_objects, no_tunel)
 def draw_cut_scene
     for i in range(segments_count - 2)
         draw_layer((segments_count - 3 - i + current_segment + 1) % segments_count, i >= segments_count - 4, false)
+    if run_engine
+        let actors = clamp(gathered_crystals, 4, 16)
+        for i in range(actors)
+            let angle = float(i) / float(actors) * math::PI * 2.0
+            let t = cut_scene_time - run_engine_timing + math::PI
+            let scale = 5.0
+            let x = scale * (cos(t) - pow(sin(t), 2.0) / sqrt(2.0) + 1.0)
+            let y = scale * cos(t) * sin(t)
+            let rot_x = cos(angle) * x - sin(angle) * y
+            let rot_y = sin(angle) * x + cos(angle) * y
+            draw_crystal(ball_pos + right * rot_x + up * rot_y + normalize(ball_pos - camera_pos) * 3.0, right, up)
     draw_ball(ball_pos)
 
 // this function will be called every frame after 'act',
