@@ -32,6 +32,7 @@ var
     seed: int4
     gathered_crystals:int
     ball_z: float
+    walls: array<int2>
 
 let
     segment_width = 1.0
@@ -59,6 +60,7 @@ def reset
     current_time = 0.0
     seed = int4(762, 22, 3, 4)
     crystals |> clear()
+    walls |> clear()
     gathered_crystals = 0
 
     segments_control_points |> resize(segments_count)
@@ -210,10 +212,16 @@ def act(dt: float)
         segments_control_points[rounded_idx] = generate_point(float(current_segment + segments_count))
         segments_edge_points[rounded_prev_idx] <- generate_edge_points(segments_control_points[rounded_prev_idx], segments_control_points[rounded_idx])
 
-        if random::random_int(seed) % 5 == 0
+        let rand_value = random::random_int(seed) % 5
+        if rand_value == 0
             crystals |> push(int2(
                 (rounded_prev_idx + segments_count - 1) % segments_count,
                 random::random_int(seed) % ((sectors_count - 1) / 2) + sectors_count / 2
+            ))
+        if rand_value == 1
+            walls |> push(int2(
+                (rounded_prev_idx + segments_count - 1) % segments_count,
+                random::random_int(seed) % sectors_count
             ))
 
         var filtered_crystals: array<int2>
@@ -222,6 +230,13 @@ def act(dt: float)
                 continue
             filtered_crystals |> push(crys)
         crystals <- filtered_crystals
+
+        var filtered_walls: array<int2>
+        for wall in walls
+            if wall.x == rounded_idx
+                continue
+            filtered_walls |> push(wall)
+        walls <- filtered_walls
 
     current_segment = new_segment
 
@@ -471,12 +486,12 @@ def draw
     draw_ball_shadow(shadow_pos)
     for crystal in crystals
         draw_crystal(crystal.x, crystal.y, true)
-
-    draw_wall(17, 7, true)
+    for wall in walls
+        draw_wall(wall.x, wall.y, true)
     draw_ball(ball_pos)
     for crystal in crystals
         draw_crystal(crystal.x, crystal.y, false)
-
-    draw_wall(17, 7, false)
+    for wall in walls
+        draw_wall(wall.x, wall.y, false)
     draw_ui()
     return
