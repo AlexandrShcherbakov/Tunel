@@ -49,6 +49,7 @@ var
     far_fog: Image
     stub_texture: Image
     paused: bool
+    sector_shift: int
 
 let
     segment_width = 1.0
@@ -62,7 +63,7 @@ let
     fog_color = 0x6A0080
     base_move_speed = 4.0
     crystal_scale = 0.25
-    crystals_to_win = 1000
+    crystals_to_win = 10
     wall_height = 0.5
     restart_timeout = 5.0
     run_engine_timing = 1.0
@@ -72,6 +73,7 @@ let
     thanks_timing = 10.0
     high_speed = 8.0
     low_speed = 3.0
+
 
 def reset
     ball_radius = 0.35
@@ -101,6 +103,7 @@ def reset
     fast_panels |> clear()
     slow_panels |> clear()
     paused = false
+    sector_shift = 0
 
     segments_control_points |> resize(segments_count)
     for i in range(segments_count)
@@ -127,7 +130,7 @@ def gen_point_for_angle(pos, next_pos, angle)
 def generate_edge_points(pos, next_pos)
     var points: array<float3>
     for i in range(sectors_count)
-        var angle = float(i) / float(sectors_count) * math::PI * 2.0
+        var angle = float(i + sector_shift) / float(sectors_count) * math::PI * 2.0
         points |> push(gen_point_for_angle(pos, next_pos, angle))
     return <- points
 
@@ -376,7 +379,7 @@ def act(dt: float)
             if rand_value / 3 == 0
                 crystals |> push(int2(
                     (rounded_prev_idx + segments_count - 1) % segments_count,
-                    random::random_int(seed) % ((sectors_count - 1) / 2) + sectors_count / 2
+                    random::random_int(seed) % sectors_count
                 ))
             if rand_value == 4
                 walls |> push(int2(
@@ -393,6 +396,8 @@ def act(dt: float)
                     (rounded_prev_idx + segments_count - 1) % segments_count,
                     random::random_int(seed) % sectors_count
                 ))
+            if rand_value == 12
+                sector_shift += 1
 
             var filtered_crystals: array<int2>
             for crys in crystals
