@@ -330,7 +330,7 @@ def draw_segment(idx)
 
 def draw_crystal(segment_id, sector_idx)
     var points : array<float3>
-    let segments = 14
+    let segments = 6
     let cell_center = (
         segments_edge_points[segment_id][sector_idx]
         + segments_edge_points[segment_id][(sector_idx + 1) % sectors_count]
@@ -379,7 +379,7 @@ def draw_crystal(segment_id, sector_idx)
         (-dot(to_center, up) + 1.0) * 0.5 * float(get_screen_height())
     )}]
 
-    graphics::fill_convex_polygon(projected_pos, 0xFFFFFF)
+    graphics::fill_convex_polygon(projected_pos, 0xC77509)
 
 // this function will be called every frame after 'act',
 // you can draw anything in this function
